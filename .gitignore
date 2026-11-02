@@ -1,0 +1,18 @@
+.dotnet/
+.dotnet-build/
+.dotnet-home/
+.nuget/
+**/bin/
+**/obj/
+.vs/
+dist/
+Analysis/
+UserData/
+GeometryDashLauncher.exe
+Desktop Screenshot*.png
+sticker-transparent.png
+*.user
+*.suo
+steam-auth.json
+settings.json
+dotnet-install.ps1

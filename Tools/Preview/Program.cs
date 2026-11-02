@@ -1,0 +1,275 @@
+using Launcher.UI;
+using Launcher.Core;
+using System.IO;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Input;
+
+internal static class Program
+{
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        if (args.Length > 1 && args[1] == "depot_cache_check")
+        {
+            var root = Path.Combine(Path.GetTempPath(), "opengd-depot-cache-test-" + Guid.NewGuid().ToString("N"));
+            var oldDir = Path.Combine(root, "old");
+            var newDir = Path.Combine(root, "new");
+            Directory.CreateDirectory(oldDir);
+            Directory.CreateDirectory(newDir);
+            var existing = Path.Combine(oldDir, "account.config");
+            var created = Path.Combine(newDir, "account.config");
+            try
+            {
+                File.WriteAllText(existing, "original");
+                var type = typeof(DepotDownloaderService).Assembly.GetType("Launcher.Core.DepotAccountCacheSnapshot")!;
+                var capture = type.GetMethods(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Single(m => m.Name == "Capture" && m.GetParameters().Length == 1);
+                var snapshot = capture.Invoke(null, [new[] { root }])!;
+                File.WriteAllText(existing, "new token");
+                File.WriteAllText(created, "new token");
+                type.GetMethod("Restore")!.Invoke(snapshot, null);
+                if (File.ReadAllText(existing) != "original" || File.Exists(created)) throw new InvalidOperationException("DepotDownloader token cache was not restored.");
+                Console.WriteLine("depot-cache-restored=True");
+            }
+            finally
+            {
+                if (File.Exists(existing)) File.Delete(existing);
+                if (File.Exists(created)) File.Delete(created);
+                Directory.Delete(oldDir);
+                Directory.Delete(newDir);
+                Directory.Delete(root);
+            }
+            return;
+        }
+        if (args.Length > 1 && args[1] == "depot_tool")
+        {
+            var tool = DepotDownloaderService.EnsureToolAsync(null, CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"tool={File.Exists(tool)}; manifest-2.2081={DepotDownloaderService.ManifestFor("2.2081")}; unsupported-2.1={DepotDownloaderService.ManifestFor("2.1") == null}");
+            return;
+        }
+        if (args.Length > 1 && args[1] == "steam_auth_check")
+        {
+            if (SteamAuthStore.AccountName != null) throw new InvalidOperationException("Do not overwrite an existing Steam sign-in for this test.");
+            var cachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "IsolatedStorage", "opengd-test", "account.config");
+            try
+            {
+                SteamAuthStore.Save("sample_account", cachePath, System.Text.Encoding.UTF8.GetBytes("test token marker"));
+                var loaded = SteamAuthStore.Load();
+                if (loaded?.Username != "sample_account" || System.Text.Encoding.UTF8.GetString(loaded.CacheBytes) != "test token marker") throw new InvalidOperationException("Steam auth roundtrip failed.");
+                var file = Path.Combine(SettingsStore.DirectoryPath, "steam-auth.json");
+                if (File.ReadAllText(file).Contains("test token marker")) throw new InvalidOperationException("Steam auth was saved without encryption.");
+                Console.WriteLine("steam-auth-encrypted=True");
+            }
+            finally { SteamAuthStore.Clear(); }
+            return;
+        }
+        if (args.Length > 1 && args[1] == "scan")
+        {
+            var source = GeodeModScanner.ChooseModsDirectory(GameService.Detect() ?? "", "");
+            var runtime = GeodeCatalogService.DetectRuntime(source);
+            Console.WriteLine($"{source}|{(source == null ? 0 : GeodeModScanner.ScanModsDirectory(source).Count)}|{runtime.GameVersion}|{runtime.GeodeVersion}");
+            return;
+        }
+        if (args.Length > 1 && args[1] == "catalog")
+        {
+            var service = new GeodeCatalogService();
+            var source = GeodeModScanner.ChooseModsDirectory(GameService.Detect() ?? "", "");
+            var runtime = GeodeCatalogService.DetectRuntime(source);
+            var result = service.SearchAsync("", 1, runtime.GameVersion, runtime.GeodeVersion).GetAwaiter().GetResult();
+            var logo = service.GetLogoAsync(result.Mods[0].Id).GetAwaiter().GetResult();
+            Console.WriteLine($"{result.Mods.Count}|{result.HasMore}|{result.Mods[0].Name}|{result.Mods[0].Version}|{result.Mods[0].Hash.Length}|{logo?.Length ?? 0}|{GeodeCatalogService.IsCompatible(result.Mods[0], runtime)}");
+            return;
+        }
+        if (args.Length > 1 && args[1] == "download")
+        {
+            Directory.CreateDirectory(args[0]);
+            var service = new GeodeCatalogService();
+            var result = service.SearchAsync("Node IDs", 1, "2.206", "3.2.0").GetAwaiter().GetResult();
+            var mod = result.Mods.First(m => m.Id == "geode.node-ids");
+            var saved = service.InstallAsync(mod, args[0]).GetAwaiter().GetResult();
+            Console.WriteLine($"{mod.Name}|{mod.Version}|{File.Exists(saved.FilePath)}|{saved.Bytes}|{GeodeModScanner.ScanModsDirectory(args[0]).Count}");
+            return;
+        }
+        if (args.Length > 1 && args[1] == "steamcheck")
+        {
+            var checkedAccount = SteamClientService.Check("nonexistent_account_for_test", GameService.Detect() ?? "");
+            Console.WriteLine($"{checkedAccount.AccountMatches}|{checkedAccount.HasInstallRecord}");
+            return;
+        }
+        var app = new App();
+        var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+        window.Show();
+        if (args.Length > 1 && args[1] == "steam_signin_ui")
+        {
+            typeof(MainWindow).GetMethod("ShowSteamFlyout", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
+            window.UpdateLayout();
+            var bitmap = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file = File.Create(args[0]); png.Save(file);
+            window.Close(); return;
+        }
+        if (args.Length > 1 && args[1] == "font")
+        {
+            var candidates = new[]
+            {
+                window.FontFamily,
+                new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Lemon/Milk(RUS BY LYAJKA)"),
+                new FontFamily(new Uri("pack://application:,,,/"), "/OpenGDLauncher;component/Assets/Fonts/#Lemon/Milk(RUS BY LYAJKA)"),
+                new FontFamily(new Uri("pack://application:,,,/"), "./OpenGDLauncher;component/Assets/Fonts/#Lemon/Milk(RUS BY LYAJKA)"),
+                new FontFamily("/OpenGDLauncher;component/Assets/Fonts/#Lemon/Milk(RUS BY LYAJKA)")
+            };
+            foreach (var candidate in candidates)
+            {
+                var typeface = new Typeface(candidate, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+                Console.WriteLine($"{candidate.Source}|{(typeface.TryGetGlyphTypeface(out var glyphs) ? glyphs.FontUri + "|" + glyphs.EmbeddingRights : "unresolved")}");
+            }
+            foreach (var family in Fonts.GetFontFamilies(new Uri("pack://application:,,,/"), "/OpenGDLauncher;component/Assets/Fonts/")) Console.WriteLine("FOUND " + family.Source);
+            window.Close(); return;
+        }
+        if (args.Length > 1 && args[1] == "version_ui")
+        {
+            var selected = SettingsStore.Load().SelectedVersion;
+            var picker = new VersionPickerWindow(GameVersionCatalog.GetEntries(), selected.Length > 0 ? selected : GameVersionCatalog.CurrentSteamVersion() ?? "", true, window.FontFamily, new Launcher.Themes.ThemeService(Path.Combine(SettingsStore.DirectoryPath, "Themes")), SettingsStore.Load().Theme)
+            { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+            picker.Show(); picker.UpdateLayout();
+            var bitmap = new RenderTargetBitmap(720, 630, 96, 96, PixelFormats.Pbgra32); bitmap.Render(picker);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file = File.Create(args[0]); png.Save(file);
+            picker.Close(); window.Close(); return;
+        }
+        if (args.Length > 1 && args[1] == "version_skin_ui")
+        {
+            var root = Path.Combine(Environment.CurrentDirectory, "dist", "theme-preview-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                var service = new Launcher.Themes.ThemeService(root);
+                new Launcher.Workshop.LocalWorkshop(service).Import(Path.Combine(Environment.CurrentDirectory, "ThemeKit", "GraphicDemo.zip"));
+                var picker = new VersionPickerWindow(GameVersionCatalog.GetEntries(), GameVersionCatalog.CurrentSteamVersion() ?? "", true, window.FontFamily, service, "GraphicDemo")
+                { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+                picker.Show(); picker.UpdateLayout();
+                var bitmap = new RenderTargetBitmap(720, 630, 96, 96, PixelFormats.Pbgra32); bitmap.Render(picker);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(args[0]); png.Save(file);
+                picker.Close(); window.Close();
+            }
+            finally
+            {
+                var expected = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "dist")) + Path.DirectorySeparatorChar;
+                if (Path.GetFullPath(root).StartsWith(expected, StringComparison.OrdinalIgnoreCase)) Directory.Delete(root, true);
+            }
+            return;
+        }
+        if (args.Length > 1 && args[1] is "home_skin_ui" or "geode_skin_ui")
+        {
+            var root = Path.Combine(Environment.CurrentDirectory, "dist", "theme-preview-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                var service = new Launcher.Themes.ThemeService(root);
+                new Launcher.Workshop.LocalWorkshop(service).Import(Path.Combine(Environment.CurrentDirectory, "ThemeKit", "GraphicDemo.zip"));
+                var themedWindow = new MainWindow(service) { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+                var settings = (AppSettings)typeof(MainWindow).GetField("settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(themedWindow)!;
+                settings.Theme = "GraphicDemo";
+                typeof(MainWindow).GetMethod("ApplyTheme", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(themedWindow, null);
+                var sound = (System.Media.SoundPlayer?)typeof(MainWindow).GetField("heroSound", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(themedWindow);
+                if (sound == null || !sound.SoundLocation.StartsWith(root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Theme sound was not applied.");
+                var page = args[1] == "geode_skin_ui" ? "ShowGeode" : "ShowHome";
+                typeof(MainWindow).GetMethod(page, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(themedWindow, null);
+                themedWindow.Show(); themedWindow.UpdateLayout();
+                var bitmap = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); bitmap.Render(themedWindow);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(args[0]); png.Save(file);
+                themedWindow.Close(); window.Close();
+            }
+            finally
+            {
+                var expected = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "dist")) + Path.DirectorySeparatorChar;
+                if (Path.GetFullPath(root).StartsWith(expected, StringComparison.OrdinalIgnoreCase)) Directory.Delete(root, true);
+            }
+            return;
+        }
+        if (args.Length > 1 && args[1] == "version_check")
+        {
+            var entries = GameVersionCatalog.GetEntries();
+            var steam = GameVersionCatalog.CurrentSteamVersion();
+            if (!entries.Any(v => v.Version == steam && v.IsCurrentSteamVersion)) throw new InvalidOperationException("Steam version is absent from catalog.");
+            var picker = new VersionPickerWindow(entries, steam ?? "", true, window.FontFamily, new Launcher.Themes.ThemeService(Path.Combine(SettingsStore.DirectoryPath, "Themes")), SettingsStore.Load().Theme);
+            var cards = (Dictionary<string, System.Windows.Controls.Button>)typeof(VersionPickerWindow).GetField("cards", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(picker)!;
+            cards["2.2081"].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            if (picker.SelectedVersion != "2.2081") throw new InvalidOperationException("Version selection failed.");
+            Console.WriteLine($"steam={steam}; local={entries.Count(v => v.LocalDirectory != null)}; selected={picker.SelectedVersion}");
+            window.Close(); return;
+        }
+        if (args.Length > 1 && args[1] == "english_ui")
+        {
+            var settings = (AppSettings)typeof(MainWindow).GetField("settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(window)!;
+            settings.Language = "en";
+            typeof(MainWindow).GetMethod("Localize", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
+            typeof(MainWindow).GetMethod("ShowHome", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
+            window.UpdateLayout();
+            var bitmap = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file = File.Create(args[0]); png.Save(file);
+            window.Close(); return;
+        }
+        if (args.Length > 1 && args[1] == "hero_ui")
+        {
+            if (typeof(MainWindow).GetField("heroSound", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(window) == null)
+                throw new InvalidOperationException("Bundled hero sound did not load.");
+            window.Dispatcher.BeginInvoke(() =>
+            {
+                window.UpdateLayout();
+                var hero = FindHero(window) ?? throw new InvalidOperationException("Hero image not found.");
+                hero.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonDownEvent });
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    var bitmap = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+                    var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                    using var file = File.Create(args[0]); png.Save(file);
+                    window.Close();
+                };
+                timer.Start();
+            });
+            app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "catalog_ui")
+        {
+            window.Dispatcher.BeginInvoke(() => typeof(MainWindow).GetMethod("ShowGeodeCatalog", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, new object[] { 1, "", true }));
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop(); window.UpdateLayout();
+                var bitmap = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(args[0]); png.Save(file);
+                window.Close();
+            };
+            timer.Start(); app.Run(window); return;
+        }
+        if (args.Length > 1)
+        {
+            var method = args[1].ToLowerInvariant() switch { "geode" => "ShowGeode", "settings" => "ShowSettings", "about" => "ShowAbout", "steam" => "ShowSteamFlyout", "purchase" => "LaunchGame", _ => "" };
+            if (method.Length > 0) typeof(MainWindow).GetMethod(method, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
+        }
+        window.UpdateLayout();
+        var image = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32);
+        image.Render(window);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+        using var output = File.Create(args[0]); encoder.Save(output);
+        window.Close();
+    }
+    private static System.Windows.Controls.Image? FindHero(DependencyObject element)
+    {
+        if (element is System.Windows.Controls.Image image && image.Width == 240 && image.Height == 240) return image;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+        {
+            var found = FindHero(VisualTreeHelper.GetChild(element, i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+}

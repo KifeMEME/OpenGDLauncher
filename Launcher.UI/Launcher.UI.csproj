@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>OpenGDLauncher</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\Fonts\ofont.ru_Lemon.ttf" />
+    <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
+    <ProjectReference Include="..\Launcher.Themes\Launcher.Themes.csproj" />
+    <ProjectReference Include="..\Launcher.Workshop\Launcher.Workshop.csproj" />
+    <Content Include="Assets\awee.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\GraphicDemo.zip" Link="Catalog\GraphicDemo.zip" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeAssets\Default\**\*" Link="ThemeAssets\Default\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\КАК_СОЗДАТЬ_СКИН.md" Link="КАК_СОЗДАТЬ_СКИН.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\КАК_СКАЧАТЬ_ВЕРСИЮ.md" Link="КАК_СКАЧАТЬ_ВЕРСИЮ.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\README.md" Link="ThemeKit\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\GraphicDemo.zip" Link="ThemeKit\GraphicDemo.zip" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\create-theme.ps1" Link="ThemeKit\create-theme.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\layout-guide.png" Link="ThemeKit\layout-guide.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\version-layout-guide.png" Link="ThemeKit\version-layout-guide.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\mod-row-layout-guide.png" Link="ThemeKit\mod-row-layout-guide.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThemeKit\Blank\**\*" Link="ThemeKit\Blank\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
