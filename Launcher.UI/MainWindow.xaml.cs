@@ -27,7 +27,6 @@ public partial class MainWindow : Window
     private Brush mutedBrush = Brushes.Gray;
     private Brush accentBrush = Brushes.MediumPurple;
     private Border? steamWarning;
-    private CancellationTokenSource? steamSignInCancellation;
     private System.Media.SoundPlayer? heroSound;
     private bool Ru => settings.Language != "en";
     private string T(string ru, string en) => Ru ? ru : en;
@@ -38,7 +37,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         WorkshopNav.Visibility = Visibility.Collapsed;
         workshop = new LocalWorkshop(themes);
-        Closed += (_, _) => { steamSignInCancellation?.Cancel(); heroSound?.Dispose(); };
+        Closed += (_, _) => heroSound?.Dispose();
         if (!GameService.IsValid(settings.GameDirectory)) settings.GameDirectory = GameService.Detect() ?? "";
         if (string.IsNullOrWhiteSpace(settings.SelectedVersion)) settings.SelectedVersion = GameVersionCatalog.CurrentSteamVersion() ?? "";
         ApplyTheme(); Localize(); ShowHome();
@@ -497,7 +496,7 @@ public partial class MainWindow : Window
     private void About_Click(object sender, RoutedEventArgs e) => ShowAbout();
     private void SteamCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (SteamFlyout.Visibility == Visibility.Visible) { steamSignInCancellation?.Cancel(); SteamFlyout.Visibility = Visibility.Collapsed; }
+        if (SteamFlyout.Visibility == Visibility.Visible) SteamFlyout.Visibility = Visibility.Collapsed;
         else ShowSteamFlyout();
         e.Handled = true;
     }
@@ -511,7 +510,7 @@ public partial class MainWindow : Window
         var panel = new StackPanel();
         var heading = new DockPanel();
         var close = new Button { Content = "×", Width = 26, Height = 24, HorizontalAlignment = HorizontalAlignment.Right, FontFamily = new FontFamily("Segoe UI"), Foreground = Foreground, Background = accentBrush, BorderThickness = new Thickness(0) };
-        close.Click += (_, _) => { steamSignInCancellation?.Cancel(); SteamFlyout.Visibility = Visibility.Collapsed; };
+        close.Click += (_, _) => SteamFlyout.Visibility = Visibility.Collapsed;
         DockPanel.SetDock(close, Dock.Right); heading.Children.Add(close);
         heading.Children.Add(new TextBlock { Text = T("Вход в Steam", "Steam sign-in"), FontSize = 19, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
         panel.Children.Add(heading);
@@ -521,40 +520,25 @@ public partial class MainWindow : Window
         panel.Children.Add(new TextBlock { Text = T("Один раз подтвердите вход в мобильном Steam. Сеанс хранится зашифрованным в Windows. Пароль лаунчер не запрашивает.", "Confirm once in Steam Mobile. The session is encrypted for this Windows user. The launcher does not ask for a password."), TextWrapping = TextWrapping.Wrap, Opacity = .7, Margin = new Thickness(5, 8, 5, 8) });
         var result = new TextBlock { Text = SteamAuthStore.AccountName is { } name ? T("Подключён аккаунт: ", "Connected account: ") + name : T("Вход не выполнен.", "Not signed in."), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(5, 8, 5, 8) };
         panel.Children.Add(result);
-        var qr = new TextBlock { FontFamily = new FontFamily("Consolas"), FontSize = 6.5, LineHeight = 7, Foreground = Brushes.White, Background = Brushes.Black, TextWrapping = TextWrapping.NoWrap, Visibility = Visibility.Collapsed, Margin = new Thickness(5, 4, 5, 8) };
-        panel.Children.Add(qr);
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
         var signIn = new Button { Content = T("Войти по QR", "Sign in with QR"), Style = actionStyle, Width = 175, Height = 40 };
-        signIn.Click += async (_, _) =>
+        signIn.Click += (_, _) =>
         {
-            if (steamSignInCancellation != null) return;
-            signIn.IsEnabled = false;
-            qr.Text = ""; qr.Visibility = Visibility.Collapsed;
-            steamSignInCancellation = new CancellationTokenSource();
-            try
+            if (string.IsNullOrWhiteSpace(login.Text))
             {
-                var progress = new Progress<SteamQrProgress>(item =>
-                {
-                    result.Text = item.QrText != null ? T("Сканируйте QR в мобильном Steam и подтвердите вход.", "Scan the QR in Steam Mobile and approve sign-in.") : T("Подключение к Steam...", item.Message);
-                    if (item.QrText != null)
-                    {
-                        qr.Text = item.QrText;
-                        qr.FontSize = Math.Min(6.5, 370.0 / Math.Max(1, item.QrText.Split('\n').Max(line => line.Length) * .62));
-                        qr.Visibility = Visibility.Visible;
-                    }
-                });
-                var account = await new DepotDownloaderService().SignInAsync(login.Text, progress, steamSignInCancellation.Token);
-                result.Text = T("Подключён аккаунт: ", "Connected account: ") + account;
-                qr.Visibility = Visibility.Collapsed;
-                UpdateSteamStatus();
+                result.Text = T("Введите логин Steam.", "Enter your Steam login.");
+                login.Focus();
+                return;
             }
-            catch (OperationCanceledException) { result.Text = T("Вход отменён.", "Sign-in cancelled."); }
-            catch (Exception error) { result.Text = T("Не удалось войти: ", "Sign-in failed: ") + error.Message; }
-            finally { steamSignInCancellation?.Dispose(); steamSignInCancellation = null; signIn.IsEnabled = true; }
+            var window = new SteamQrWindow(login.Text.Trim(), Ru, FontFamily, contentCardBrush, Foreground, accentBrush, actionStyle) { Owner = this };
+            window.SignedIn += account => result.Text = T("Подключён аккаунт: ", "Connected account: ") + account;
+            SteamFlyout.Visibility = Visibility.Collapsed;
+            window.ShowDialog();
+            UpdateSteamStatus();
         };
         actions.Children.Add(signIn);
         var signOut = new Button { Content = T("Выйти", "Sign out"), Style = actionStyle, Width = 175, Height = 40 };
-        signOut.Click += (_, _) => { if (steamSignInCancellation != null) return; SteamAuthStore.Clear(); UpdateSteamStatus(); result.Text = T("Вход удалён.", "Sign-in removed."); qr.Visibility = Visibility.Collapsed; };
+        signOut.Click += (_, _) => { SteamAuthStore.Clear(); UpdateSteamStatus(); result.Text = T("Вход удалён.", "Sign-in removed."); };
         actions.Children.Add(signOut);
         panel.Children.Add(actions);
         SteamFlyout.Child = new ScrollViewer { Content = panel, MaxHeight = 540, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };

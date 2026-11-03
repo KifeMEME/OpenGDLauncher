@@ -117,9 +117,27 @@ public sealed class DepotDownloaderService
                 var line = e.Data;
                 lastOutput = line;
                 if (line.Contains("QR code has changed", StringComparison.OrdinalIgnoreCase) || line.Contains("Use the Steam Mobile App", StringComparison.OrdinalIgnoreCase))
-                { qrMode = true; qrLines.Clear(); return; }
-                if (qrMode && line.Length >= 20 && line.All(c => c is ' ' or '█' or '▀' or '▄'))
-                { qrLines.Add(line); progress?.Report(new("Scan the QR code in Steam Mobile and confirm sign-in.", string.Join('\n', qrLines))); return; }
+                {
+                    qrMode = true;
+                    qrLines.Clear();
+                    progress?.Report(new("Waiting for Steam QR code..."));
+                    return;
+                }
+                if (qrMode && TryQrRow(line, out var qrRow))
+                {
+                    if (qrLines.Count > 0 && TryQrWidth(qrLines[0], out var firstWidth) &&
+                        TryQrWidth(qrRow, out var rowWidth) && rowWidth != firstWidth)
+                    {
+                        qrLines.Clear();
+                        return;
+                    }
+                    qrLines.Add(qrRow);
+                    // DepotDownloader prints one QR module per ASCII token, one row at a time.
+                    // Send only a complete square so the UI never shows an unscannable half-code.
+                    if (TryQrWidth(qrLines[0], out var width) && qrLines.Count == width)
+                        progress?.Report(new("Scan the QR code in Steam Mobile and confirm sign-in.", string.Join('\n', qrLines)));
+                    return;
+                }
                 if (qrMode && qrLines.Count > 0) qrMode = false;
                 var namedAccount = Regex.Match(line, @"-username\s+(?<name>\S+)\s+-remember-password", RegexOptions.IgnoreCase);
                 if (namedAccount.Success) authenticatedName = namedAccount.Groups["name"].Value;
@@ -143,6 +161,40 @@ public sealed class DepotDownloaderService
         finally { accountCache.Restore(); }
         progress?.Report(new("Steam account connected."));
         return username;
+    }
+
+    private static bool TryQrRow(string line, out string row)
+    {
+        row = Regex.Replace(line, "\\x1B\\[[0-9;]*[A-Za-z]", "").Replace('\u00a0', ' ');
+        return row.Length >= 21 && row.Length <= 240 && row.All(c => c is ' ' or '█') && TryQrWidth(row, out _);
+    }
+
+    private static bool TryQrWidth(string row, out int width)
+    {
+        // DepotDownloader 3.4.0 uses two characters for both dark and light modules.
+        // Other QRCoder versions may use one space for a light module.
+        if (row.Length % 2 == 0)
+        {
+            var paired = true;
+            for (var index = 0; index < row.Length; index += 2)
+                if (!((row[index] == ' ' && row[index + 1] == ' ') ||
+                      (row[index] == '█' && row[index + 1] == '█')))
+                { paired = false; break; }
+            if (paired)
+            {
+                width = row.Length / 2;
+                return width is >= 21 and <= 120;
+            }
+        }
+        width = 0;
+        for (var index = 0; index < row.Length;)
+        {
+            if (row[index] == ' ') { index++; width++; continue; }
+            if (index + 1 >= row.Length || row[index] != '█' || row[index + 1] != '█') return false;
+            index += 2;
+            width++;
+        }
+        return width is >= 21 and <= 120;
     }
 
     private static bool CacheHasUsername(byte[]? bytes, string username)

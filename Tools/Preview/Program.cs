@@ -11,6 +11,30 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length > 1 && args[1] == "steam_qr_probe")
+        {
+            using var cancellation = new CancellationTokenSource();
+            var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var progress = new Progress<SteamQrProgress>(item => { if (item.QrText != null) received.TrySetResult(item.QrText); });
+            var signIn = new DepotDownloaderService().SignInAsync(SteamAuthStore.AccountName ?? "qr_probe", progress, cancellation.Token);
+            try
+            {
+                var completed = Task.WhenAny(received.Task, signIn, Task.Delay(TimeSpan.FromSeconds(30))).GetAwaiter().GetResult();
+                if (completed == signIn) signIn.GetAwaiter().GetResult();
+                if (completed != received.Task) throw new TimeoutException("Steam did not provide a QR code within 30 seconds.");
+                var qr = received.Task.GetAwaiter().GetResult();
+                var renderer = typeof(MainWindow).Assembly.GetType("Launcher.UI.SteamQrBitmap")!;
+                var bitmap = (BitmapSource?)renderer.GetMethod("TryCreate")!.Invoke(null, [qr]);
+                if (bitmap == null || bitmap.PixelWidth != bitmap.PixelHeight) throw new InvalidOperationException("Steam QR output could not be rendered as a square bitmap.");
+                Console.WriteLine($"steam-qr-renderable=True; modules={bitmap.PixelWidth}");
+            }
+            finally
+            {
+                cancellation.Cancel();
+                try { signIn.GetAwaiter().GetResult(); } catch (OperationCanceledException) { }
+            }
+            return;
+        }
         if (args.Length > 1 && args[1] == "depot_cache_check")
         {
             var root = Path.Combine(Path.GetTempPath(), "opengd-depot-cache-test-" + Guid.NewGuid().ToString("N"));
@@ -100,6 +124,22 @@ internal static class Program
         var app = new App();
         var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
         window.Show();
+        if (args.Length > 1 && args[1] == "steam_qr_window_ui")
+        {
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var style = (System.Windows.Style)typeof(MainWindow).GetField("actionStyle", flags)!.GetValue(window)!;
+            var background = (Brush)typeof(MainWindow).GetField("contentCardBrush", flags)!.GetValue(window)!;
+            var accent = (Brush)typeof(MainWindow).GetField("accentBrush", flags)!.GetValue(window)!;
+            var qrWindow = new SteamQrWindow("preview", true, window.FontFamily, background, window.Foreground, accent, style, startOnLoad: false)
+            { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+            qrWindow.Show();
+            qrWindow.UpdateLayout();
+            var qrPreview = new RenderTargetBitmap(520, 625, 96, 96, PixelFormats.Pbgra32);
+            qrPreview.Render(qrWindow);
+            var qrPng = new PngBitmapEncoder(); qrPng.Frames.Add(BitmapFrame.Create(qrPreview));
+            using var qrFile = File.Create(args[0]); qrPng.Save(qrFile);
+            qrWindow.Close(); window.Close(); return;
+        }
         if (args.Length > 1 && args[1] == "steam_signin_ui")
         {
             typeof(MainWindow).GetMethod("ShowSteamFlyout", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
