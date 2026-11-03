@@ -2,7 +2,7 @@
 
 Бесплатный лаунчер Geometry Dash для Windows 10/11.
 
-[Скачать тестовую сборку Windows x64](Downloads/OpenGDLauncher-v14-win-x64.zip) (v14, ZIP). Распакуйте архив и запустите `OpenGDLauncher.exe`. Требуется .NET 8 Desktop Runtime. SHA-256 архива: `7B401CC5E2773B9B47ABBB9C079FF704651E0203DC45C3C541B05D2F0784BF8E`.
+[Скачать тестовую сборку Windows x64](Downloads/OpenGDLauncher-v14-win-x64.zip)
 
 ## Что в лаунчере?
 
