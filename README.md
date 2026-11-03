@@ -29,3 +29,9 @@
 ## О самом лаунчере
 
 Каталог модов Geode работает через открытый API; для него нужен интернет. Оценки тем, Discord OAuth, Supabase, серверный API и бот пока не реализованы и не подключены. Текущая версия игры устанавливается и обновляется штатным клиентом Steam; старые версии загружаются официальным DepotDownloader через Steam-авторизацию. Автоматический установщик самого Geode пока не добавлен. Некоторые моды требуют дополнительных зависимостей; после скачивания Geode может сообщить об их отсутствии при запуске игры.
+
+## Скриншоты 
+
+<img width="500" height="335" alt="01" src="https://github.com/user-attachments/assets/5ba58783-a92d-46b1-ad81-062d26871172" />
+<img width="500" height="335" alt="02" src="https://github.com/user-attachments/assets/427f1060-4986-4275-9f0c-a29de3d71477" />
+<img width="500" height="335" alt="03" src="https://github.com/user-attachments/assets/b44161ff-f160-47d9-b23e-1489d8d8e1e0" />
