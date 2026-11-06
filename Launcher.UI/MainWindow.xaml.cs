@@ -306,10 +306,8 @@ public partial class MainWindow : Window
         refreshPage = ShowGame;
         var p = Stack(); p.Children.Add(Label(T("Путь: ", "Path: ") + (settings.GameDirectory.Length > 0 ? settings.GameDirectory : "—")));
         p.Children.Add(Label(T("Статус: ", "Status: ") + (GameService.IsValid(settings.GameDirectory) ? T("установлена", "installed") : T("не найдена", "not found"))));
-        p.Children.Add(Action(T("Найти автоматически", "Detect automatically"), () => { settings.GameDirectory = GameService.Detect() ?? ""; SettingsStore.Save(settings); ShowGame(); }));
-        p.Children.Add(Action(T("Выбрать папку", "Choose folder"), ChooseGame)); p.Children.Add(Action(T("Запустить", "Launch"), LaunchGame));
-        p.Children.Add(Action(T("Установить через Steam", "Install with Steam"), GameService.OpenSteamInstall));
-        p.Children.Add(Action(T("Открыть Steam для обновления", "Open Steam for updates"), GameService.OpenSteamUpdate)); SetPage("Geometry Dash", p, GameNav);
+        p.Children.Add(Action(T("Выбрать папку", "Choose folder"), ChooseGame));
+        p.Children.Add(Action(T("Открыть Steam", "Open Steam"), GameService.OpenSteamUpdate)); SetPage("Geometry Dash", p, GameNav);
     }
     private void ShowGeode()
     {
@@ -491,11 +489,21 @@ public partial class MainWindow : Window
         refreshPage = ShowThemes;
         var p = Stack(); foreach (var name in themes.Names())
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal }; ThemeManifest manifest;
+            ThemeManifest manifest;
             try { manifest = themes.Load(name); } catch { continue; }
-            row.Children.Add(Label($"{manifest.Name} — {manifest.Author}"));
-            row.Children.Add(Action(T("Применить", "Apply"), () => { settings.Theme = name; SettingsStore.Save(settings); ApplyTheme(); ShowThemes(); }));
-            if (name != "Default") row.Children.Add(Action(T("Удалить", "Delete"), () => { if (settings.Theme == name) { settings.Theme = "Default"; SettingsStore.Save(settings); ApplyTheme(); } themes.Delete(name); ShowThemes(); }));
+            var row = new Grid { Margin = new Thickness(0, 3, 0, 6) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+            var title = $"{manifest.Name} — {manifest.Author}";
+            row.Children.Add(new TextBlock { Text = title, ToolTip = title, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 8, 0) });
+            var apply = Action(T("Применить", "Apply"), () => { settings.Theme = name; SettingsStore.Save(settings); ApplyTheme(); ShowThemes(); });
+            apply.Width = 106; apply.Height = 38; apply.Margin = new Thickness(3); Grid.SetColumn(apply, 1); row.Children.Add(apply);
+            if (name != "Default")
+            {
+                var delete = Action(T("Удалить", "Delete"), () => { if (settings.Theme == name) { settings.Theme = "Default"; SettingsStore.Save(settings); ApplyTheme(); } themes.Delete(name); ShowThemes(); });
+                delete.Width = 106; delete.Height = 38; delete.Margin = new Thickness(3); Grid.SetColumn(delete, 2); row.Children.Add(delete);
+            }
             p.Children.Add(row);
         }
         SetPage(T("Мои темы", "My themes"), p, ThemesNav);
@@ -509,12 +517,11 @@ public partial class MainWindow : Window
         var sample = Path.Combine(AppContext.BaseDirectory, "Catalog", "GraphicDemo.zip");
         if (File.Exists(sample)) p.Children.Add(Action(T("Установить пример", "Install example"), () => { workshop.Import(sample); ShowThemes(); }));
         p.Children.Add(Action(T("Установить ZIP", "Install ZIP"), () => { var dialog = new OpenFileDialog { Filter = "Theme ZIP|*.zip" }; if (dialog.ShowDialog() == true) { workshop.Import(dialog.FileName); ShowThemes(); } }));
-        p.Children.Add(Action(T("Открыть мои темы", "Open my themes"), ShowThemes));
         var designerKit = Path.Combine(AppContext.BaseDirectory, "ThemeKit");
         if (Directory.Exists(designerKit)) p.Children.Add(Action(T("Шаблоны и инструкция", "Templates and guide"), () => GameService.OpenFolder(designerKit)));
         SetPage(T("Настройки", "Settings"), p, SettingsNav);
     }
-    private void ShowAbout() { refreshPage = ShowAbout; var p = Stack(); p.Children.Add(Label(T("OpenGDLauncher — бесплатный проект с открытым исходным кодом. Geometry Dash и Geode принадлежат их правообладателям. Для установки игры используется Steam.", "OpenGDLauncher is a free, open source project. Geometry Dash and Geode belong to their respective owners. Steam handles game installation."))); p.Children.Add(Action(T("Поддержать автора", "Support the author"), () => GameService.OpenUrl("https://www.donationalerts.com/r/kifememe"))); SetPage(T("Описание", "Description"), p, AboutNav); }
+    private void ShowAbout() { refreshPage = ShowAbout; var p = Stack(); p.Children.Add(Label(T("OpenGD Launcher это бесплатный проект с открытым исходным кодом. Если вам не жалко, то можете поддержать автора продвижением данного лаунчера, или же кинуть денежку на кофе! :3", "OpenGD Launcher is a free, open-source project. If you'd like, you can support the author by sharing the launcher or buying them a coffee! :3"))); p.Children.Add(Action(T("Поддержать автора", "Support the author"), () => GameService.OpenUrl("https://www.donationalerts.com/r/kifememe"))); SetPage(T("Описание", "Description"), p, AboutNav); }
     private void Language_Click(object sender, RoutedEventArgs e)
     {
         settings.Language = Ru ? "en" : "ru";

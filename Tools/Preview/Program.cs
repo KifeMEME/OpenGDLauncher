@@ -245,6 +245,27 @@ internal static class Program
             using var file = File.Create(args[0]); png.Save(file);
             picker.Close(); window.Close(); return;
         }
+        if (args.Length > 1 && args[1] == "version_cancel_ui")
+        {
+            var picker = new VersionPickerWindow(GameVersionCatalog.GetEntries(), GameVersionCatalog.CurrentSteamVersion() ?? "", true, window.FontFamily, new Launcher.Themes.ThemeService(Path.Combine(SettingsStore.DirectoryPath, "Themes")), SettingsStore.Load().Theme)
+            { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+            picker.Show(); picker.UpdateLayout();
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var cancel = (System.Windows.Controls.Button)typeof(VersionPickerWindow).GetField("cancelButton", flags)!.GetValue(picker)!;
+            if (cancel.Visibility != Visibility.Collapsed) throw new InvalidOperationException("Cancel button was visible before a download started.");
+            using var cancellation = new CancellationTokenSource();
+            typeof(VersionPickerWindow).GetField("busy", flags)!.SetValue(picker, true);
+            typeof(VersionPickerWindow).GetField("downloadCancellation", flags)!.SetValue(picker, cancellation);
+            cancel.Visibility = Visibility.Visible;
+            picker.UpdateLayout();
+            var frame = new RenderTargetBitmap(720, 630, 96, 96, PixelFormats.Pbgra32); frame.Render(picker);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(frame));
+            using (var file = File.Create(args[0])) png.Save(file);
+            cancel.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            if (!cancellation.IsCancellationRequested || cancel.IsEnabled) throw new InvalidOperationException("Cancel button did not signal cancellation.");
+            Console.WriteLine("version-cancel=hidden-before-download; token-cancelled-on-click");
+            picker.Close(); window.Close(); return;
+        }
         if (args.Length > 1 && args[1] == "version_skin_ui")
         {
             var root = Path.Combine(Environment.CurrentDirectory, "dist", "theme-preview-" + Guid.NewGuid().ToString("N"));
@@ -359,7 +380,7 @@ internal static class Program
         }
         if (args.Length > 1)
         {
-            var method = args[1].ToLowerInvariant() switch { "geode" => "ShowGeode", "themes" => "ShowThemes", "settings" => "ShowSettings", "about" => "ShowAbout", "steam" => "ShowSteamFlyout", "purchase" => "LaunchGame", _ => "" };
+            var method = args[1].ToLowerInvariant() switch { "game" => "ShowGame", "geode" => "ShowGeode", "themes" => "ShowThemes", "settings" => "ShowSettings", "about" => "ShowAbout", "steam" => "ShowSteamFlyout", "purchase" => "LaunchGame", _ => "" };
             if (method.Length > 0) typeof(MainWindow).GetMethod(method, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
         }
         window.UpdateLayout();

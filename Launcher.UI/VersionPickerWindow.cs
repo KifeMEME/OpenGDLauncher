@@ -20,6 +20,7 @@ public sealed class VersionPickerWindow : Window
     private readonly TextBlock selectionNote;
     private readonly TextBlock fileNote;
     private readonly Button downloadButton;
+    private readonly Button cancelButton;
     private readonly Button chooseButton;
     private readonly ProgressBar progressBar;
     private readonly DepotDownloaderService downloader = new();
@@ -29,6 +30,7 @@ public sealed class VersionPickerWindow : Window
     public string SelectedVersion => selectedVersion;
 
     private string T(string russian, string english) => ru ? russian : english;
+    private bool IsVersionDownloaded(string version) => DepotDownloaderService.IsDownloaded(version) || versions.Any(entry => entry.Version == version && entry.IsCurrentSteamVersion);
 
     public VersionPickerWindow(IReadOnlyList<GameVersionEntry> versions, string selectedVersion, bool ru, FontFamily font, ThemeService themes, string themeName)
     {
@@ -97,7 +99,7 @@ public sealed class VersionPickerWindow : Window
         {
             var contents = new StackPanel { Margin = new Thickness(10, 3, 4, 2) };
             contents.Children.Add(new TextBlock { Text = version.Version, FontSize = 15, FontWeight = FontWeights.Bold });
-            var status = DepotDownloaderService.IsDownloaded(version.Version) ? T("Загружена", "Downloaded") : version.IsCurrentSteamVersion ? T("Steam · можно играть", "Steam · playable") : version.LocalDirectory != null ? T("Есть локальная копия", "Local copy found") : DepotDownloaderService.ManifestFor(version.Version) != null ? T("Steam-манифест указан", "Steam manifest listed") : T("Нет Steam-манифеста", "No Steam manifest");
+            var status = IsVersionDownloaded(version.Version) ? T("Загружено", "Downloaded") : T("Не загружено", "Not downloaded");
             contents.Children.Add(new TextBlock { Text = status, FontSize = 9, Foreground = new SolidColorBrush(muted), Margin = new Thickness(0, 2, 0, 0) });
             var card = new Button { Content = contents, Style = cardStyle, Width = 160, Height = 49, Margin = new Thickness(4), Padding = new Thickness(0), BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             card.Click += (_, _) => { this.selectedVersion = version.Version; RefreshSelection(); };
@@ -109,8 +111,7 @@ public sealed class VersionPickerWindow : Window
 
         var footer = new Grid { Margin = new Thickness(0, 12, 0, 0) };
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
-        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var statusPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 15, 0) };
         selectionNote = new TextBlock { FontSize = 10, Foreground = new SolidColorBrush(muted), TextWrapping = TextWrapping.Wrap };
         progressBar = new ProgressBar { Height = 5, IsIndeterminate = true, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 7, 0, 0), Foreground = new SolidColorBrush(selectedColor), Background = cardNormal };
@@ -119,12 +120,17 @@ public sealed class VersionPickerWindow : Window
         statusPanel.Children.Add(progressBar);
         statusPanel.Children.Add(fileNote);
         footer.Children.Add(statusPanel);
-        downloadButton = new Button { Content = T("↓  Скачать", "↓  Download"), Style = footerStyle, Width = 166, Height = 45, Margin = new Thickness(0), FontWeight = FontWeights.Bold };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        downloadButton = new Button { Content = T("↓  Скачать", "↓  Download"), Style = footerStyle, Width = 136, Height = 45, Margin = new Thickness(2), FontWeight = FontWeights.Bold };
         downloadButton.Click += async (_, _) => await DownloadSelectedAsync();
-        Grid.SetColumn(downloadButton, 1); footer.Children.Add(downloadButton);
-        chooseButton = new Button { Content = T("Выбрать  →", "Select  →"), Style = footerStyle, Width = 166, Height = 45, Margin = new Thickness(0), FontWeight = FontWeights.Bold };
+        buttons.Children.Add(downloadButton);
+        cancelButton = new Button { Content = T("Отменить", "Cancel"), Style = footerStyle, Width = 126, Height = 45, Margin = new Thickness(2), FontWeight = FontWeights.Bold, Visibility = Visibility.Collapsed };
+        cancelButton.Click += (_, _) => CancelDownload();
+        buttons.Children.Add(cancelButton);
+        chooseButton = new Button { Content = T("Выбрать  →", "Select  →"), Style = footerStyle, Width = 166, Height = 45, Margin = new Thickness(2), FontWeight = FontWeights.Bold };
         chooseButton.Click += (_, _) => { DialogResult = true; Close(); };
-        Grid.SetColumn(chooseButton, 2); footer.Children.Add(chooseButton);
+        buttons.Children.Add(chooseButton);
+        Grid.SetColumn(buttons, 1); footer.Children.Add(buttons);
         Grid.SetRow(footer, 3); root.Children.Add(footer);
         Closing += (_, _) => downloadCancellation?.Cancel();
         RefreshSelection();
@@ -137,10 +143,10 @@ public sealed class VersionPickerWindow : Window
             var selected = version == selectedVersion;
             card.Background = selected ? cardSelected : cardNormal;
             card.BorderBrush = selected ? new SolidColorBrush(selectedColor) : Brushes.Transparent;
-            if (DepotDownloaderService.IsDownloaded(version) && card.Content is StackPanel details && details.Children[1] is TextBlock state) state.Text = T("Загружена", "Downloaded");
+            if (card.Content is StackPanel details && details.Children[1] is TextBlock state) state.Text = IsVersionDownloaded(version) ? T("Загружено", "Downloaded") : T("Не загружено", "Not downloaded");
         }
         var chosen = versions.FirstOrDefault(v => v.Version == selectedVersion);
-        downloadButton.IsEnabled = !busy && SteamAuthStore.AccountName != null && DepotDownloaderService.ManifestFor(selectedVersion) != null && !DepotDownloaderService.IsDownloaded(selectedVersion);
+        downloadButton.IsEnabled = !busy && SteamAuthStore.AccountName != null && DepotDownloaderService.ManifestFor(selectedVersion) != null && !IsVersionDownloaded(selectedVersion);
         selectionNote.Text = DepotDownloaderService.IsDownloaded(selectedVersion)
             ? T("Загружена через Steam. Можно выбрать и играть.", "Downloaded through Steam. Select to play.")
             : SteamAuthStore.AccountName == null
@@ -151,28 +157,39 @@ public sealed class VersionPickerWindow : Window
                 ? T("Локальная копия найдена. Запуск через Steam для неё пока недоступен.", "Local copy found. Steam launch for this copy is not available yet.")
                 : DepotDownloaderService.ManifestFor(selectedVersion) != null
                     ? T("Нажмите «Скачать» для загрузки через Steam.", "Click Download to fetch this version through Steam.")
-                    : T("Для этой версии нет Steam-манифеста.", "No Steam manifest is configured for this version.");
+                    : T("Эта версия пока недоступна для загрузки.", "This version is not available for download yet.");
+    }
+
+    private void CancelDownload()
+    {
+        if (!busy || downloadCancellation == null || downloadCancellation.IsCancellationRequested) return;
+        cancelButton.IsEnabled = false;
+        selectionNote.Text = T("Отменяем загрузку...", "Cancelling download...");
+        downloadCancellation.Cancel();
     }
 
     private async Task DownloadSelectedAsync()
     {
-        if (busy || SteamAuthStore.AccountName == null || DepotDownloaderService.ManifestFor(selectedVersion) == null) return;
+        if (busy || SteamAuthStore.AccountName == null || DepotDownloaderService.ManifestFor(selectedVersion) == null || IsVersionDownloaded(selectedVersion)) return;
         busy = true; downloadButton.IsEnabled = false; chooseButton.IsEnabled = false;
+        cancelButton.IsEnabled = true; cancelButton.Visibility = Visibility.Visible;
         progressBar.Visibility = Visibility.Visible;
         progressBar.IsIndeterminate = true;
         fileNote.Visibility = Visibility.Visible; fileNote.Text = "";
         foreach (var card in cards.Values) card.IsEnabled = false;
-        downloadCancellation = new CancellationTokenSource();
+        using var cancellation = new CancellationTokenSource();
+        downloadCancellation = cancellation;
         var version = selectedVersion;
         try
         {
             var progress = new Progress<DepotDownloadProgress>(item =>
             {
+                if (!busy || cancellation.IsCancellationRequested) return;
                 selectionNote.Text = item.Percent is { } percent ? T($"Загрузка: {percent:0}%", $"Downloading: {percent:0}%") : T("Загрузка файлов игры...", item.Message);
                 if (item.Percent is { } value) { progressBar.IsIndeterminate = false; progressBar.Value = value; }
                 if (!string.IsNullOrWhiteSpace(item.FileName)) fileNote.Text = item.FileName;
             });
-            await downloader.DownloadAsync(version, progress, downloadCancellation.Token);
+            await downloader.DownloadAsync(version, progress, cancellation.Token);
             RefreshSelection();
         }
         catch (OperationCanceledException) { selectionNote.Text = T("Загрузка отменена.", "Download cancelled."); }
@@ -180,12 +197,13 @@ public sealed class VersionPickerWindow : Window
         finally
         {
             busy = false;
+            cancelButton.Visibility = Visibility.Collapsed;
             progressBar.Visibility = Visibility.Collapsed;
             fileNote.Visibility = Visibility.Collapsed;
             chooseButton.IsEnabled = true;
             foreach (var card in cards.Values) card.IsEnabled = true;
-            downloadCancellation.Dispose(); downloadCancellation = null;
-            downloadButton.IsEnabled = SteamAuthStore.AccountName != null && DepotDownloaderService.ManifestFor(selectedVersion) != null && !DepotDownloaderService.IsDownloaded(selectedVersion);
+            downloadCancellation = null;
+            downloadButton.IsEnabled = SteamAuthStore.AccountName != null && DepotDownloaderService.ManifestFor(selectedVersion) != null && !IsVersionDownloaded(selectedVersion);
         }
     }
 }
