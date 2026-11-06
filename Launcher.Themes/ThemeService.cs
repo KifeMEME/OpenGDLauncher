@@ -25,6 +25,8 @@ public sealed class ThemeManifest
     public string? BackgroundImage { get; set; }
     public string? SidebarImage { get; set; }
     public string? HeaderImage { get; set; }
+    public string? LanguageRuImage { get; set; }
+    public string? LanguageEnImage { get; set; }
     public string? PanelImage { get; set; }
     public string? CardImage { get; set; }
     public string? LogoImage { get; set; }
@@ -52,7 +54,7 @@ public sealed class ThemeManifest
     public string? NavigationHoverImage { get; set; }
     public string? NavigationPressedImage { get; set; }
     public string? NavigationDisabledImage { get; set; }
-    public IEnumerable<string?> Images() => new[] { BackgroundImage, SidebarImage, HeaderImage, PanelImage, CardImage, LogoImage, IconImage, DecorationImage, HeroImage, RibbonImage, SteamCardImage, ContentCardImage, ModRowImage, VersionBackgroundImage, VersionCardNormalImage, VersionCardHoverImage, VersionCardSelectedImage, VersionButtonNormalImage, VersionButtonHoverImage, VersionButtonPressedImage, ButtonNormalImage, ButtonHoverImage, ButtonPressedImage, ButtonDisabledImage, NavigationNormalImage, NavigationHoverImage, NavigationPressedImage, NavigationDisabledImage };
+    public IEnumerable<string?> Images() => new[] { BackgroundImage, SidebarImage, HeaderImage, LanguageRuImage, LanguageEnImage, PanelImage, CardImage, LogoImage, IconImage, DecorationImage, HeroImage, RibbonImage, SteamCardImage, ContentCardImage, ModRowImage, VersionBackgroundImage, VersionCardNormalImage, VersionCardHoverImage, VersionCardSelectedImage, VersionButtonNormalImage, VersionButtonHoverImage, VersionButtonPressedImage, ButtonNormalImage, ButtonHoverImage, ButtonPressedImage, ButtonDisabledImage, NavigationNormalImage, NavigationHoverImage, NavigationPressedImage, NavigationDisabledImage };
 }
 
 public sealed class ThemeService

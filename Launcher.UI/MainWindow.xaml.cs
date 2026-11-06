@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private Brush accentBrush = Brushes.MediumPurple;
     private Border? steamWarning;
     private System.Media.SoundPlayer? heroSound;
+    private Action? refreshPage;
+    private bool startupAnimated;
     private bool Ru => settings.Language != "en";
     private string T(string ru, string en) => Ru ? ru : en;
     public MainWindow() : this(null) { }
@@ -47,6 +49,9 @@ public partial class MainWindow : Window
         HomeNav.Content = T("Главная", "Home"); GameNav.Content = "Geometry Dash"; GeodeNav.Content = "Geode";
         WorkshopNav.Content = T("Мастерская", "Workshop"); ThemesNav.Content = T("Мои темы", "My themes");
         SettingsNav.Content = T("Настройки", "Settings"); AboutNav.Content = T("Описание", "Description");
+        LanguageButton.ToolTip = T("Switch to English", "Переключить на русский");
+        System.Windows.Automation.AutomationProperties.SetName(LanguageButton, T("Switch to English", "Переключить на русский"));
+        UpdateLanguageFlag();
         UpdateSteamStatus();
     }
     private void ApplyTheme()
@@ -91,7 +96,8 @@ public partial class MainWindow : Window
             Asset(theme.ButtonPressedImage, standard.ButtonPressedImage, Color.Multiply(button, 0.8f)),
             Asset(theme.ButtonDisabledImage, standard.ButtonDisabledImage, Colors.Gray));
         foreach (var item in new[] { HomeNav, GameNav, GeodeNav, WorkshopNav, ThemesNav, SettingsNav, AboutNav }) item.Style = nav;
-        foreach (var item in new[] { MinimizeButton, CloseButton }) { item.Background = new SolidColorBrush(panel); item.Foreground = new SolidColorBrush(text); item.BorderThickness = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
+        foreach (var item in new[] { LanguageButton, MinimizeButton, CloseButton }) { item.Background = new SolidColorBrush(panel); item.Foreground = new SolidColorBrush(text); item.BorderThickness = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
+        UpdateLanguageFlag();
         UpdateSteamStatus();
         heroSound?.Dispose(); heroSound = null;
         if (theme.HeroSoundEnabled)
@@ -101,6 +107,43 @@ public partial class MainWindow : Window
                 try { heroSound = new System.Media.SoundPlayer(soundFile); heroSound.Load(); }
                 catch (Exception) { heroSound?.Dispose(); heroSound = null; }
         }
+    }
+    private void UpdateLanguageFlag()
+    {
+        LanguageFlagImage.Source = null;
+        LanguageFlagImage.Visibility = Visibility.Collapsed;
+        RussianFlag.Visibility = Ru ? Visibility.Visible : Visibility.Collapsed;
+        EnglishFlag.Visibility = Ru ? Visibility.Collapsed : Visibility.Visible;
+        try
+        {
+            var theme = themes.Load(settings.Theme);
+            var standard = themes.Load("Default");
+            var file = themes.ResolveImage(settings.Theme,
+                Ru ? theme.LanguageRuImage : theme.LanguageEnImage,
+                Ru ? standard.LanguageRuImage : standard.LanguageEnImage);
+            if (file == null) return;
+            var image = new BitmapImage();
+            image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.UriSource = new Uri(file); image.EndInit(); image.Freeze();
+            LanguageFlagImage.Source = image;
+            LanguageFlagImage.Visibility = Visibility.Visible;
+            RussianFlag.Visibility = Visibility.Collapsed;
+            EnglishFlag.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error) when (error is IOException or FormatException or NotSupportedException)
+        {
+            // A missing or damaged optional flag falls back to the built-in vector icon.
+        }
+    }
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (startupAnimated) return;
+        startupAnimated = true;
+        Opacity = 1;
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300))
+        {
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        });
     }
     private Brush ThemeImage(string? custom, string? fallback, Color baseColor, double opacity = 1)
     {
@@ -194,6 +237,7 @@ public partial class MainWindow : Window
     private void SetPage(string heading, UIElement content, Button? navigation = null) { Heading.Text = heading; Subtitle.Text = T("Управление игрой и оформлением", "Manage game and appearance"); Page.Content = new Border { Background = contentCardBrush, CornerRadius = new CornerRadius(10), Padding = new Thickness(12), Child = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; Status.Text = ""; if (navigation != null) SelectNav(navigation); }
     private void ShowHome()
     {
+        refreshPage = ShowHome;
         Heading.Text = "Geometry Dash";
         Subtitle.Text = T("Игра и моды — в одном месте.", "Your game and mods in one place.");
         SelectNav(HomeNav);
@@ -278,6 +322,7 @@ public partial class MainWindow : Window
     }
     private void ShowGame()
     {
+        refreshPage = ShowGame;
         var p = Stack(); p.Children.Add(Label(T("Путь: ", "Path: ") + (settings.GameDirectory.Length > 0 ? settings.GameDirectory : "—")));
         p.Children.Add(Label(T("Статус: ", "Status: ") + (GameService.IsValid(settings.GameDirectory) ? T("установлена", "installed") : T("не найдена", "not found"))));
         p.Children.Add(Action(T("Найти автоматически", "Detect automatically"), () => { settings.GameDirectory = GameService.Detect() ?? ""; SettingsStore.Save(settings); ShowGame(); }));
@@ -287,6 +332,7 @@ public partial class MainWindow : Window
     }
     private void ShowGeode()
     {
+        refreshPage = ShowGeode;
         var p = Stack();
         var source = GeodeModScanner.ChooseModsDirectory(settings.GameDirectory, settings.GeodeModsDirectory);
         var mods = source == null ? Array.Empty<GeodeMod>() : GeodeModScanner.ScanModsDirectory(source);
@@ -360,6 +406,7 @@ public partial class MainWindow : Window
         p.Children.Add(Action(T("← Установленные моды", "← Installed mods"), ShowGeode));
         var search = new StackPanel { Orientation = Orientation.Horizontal };
         var input = new TextBox { Text = query, Width = 330, Height = 34, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(5) };
+        refreshPage = () => ShowGeodeCatalog(page, input.Text, compatibleOnly);
         input.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) ShowGeodeCatalog(1, input.Text, compatibleOnly); };
         search.Children.Add(input);
         search.Children.Add(Action(T("Поиск", "Search"), () => ShowGeodeCatalog(1, input.Text, compatibleOnly)));
@@ -451,6 +498,7 @@ public partial class MainWindow : Window
     }
     private void ShowWorkshop()
     {
+        refreshPage = ShowWorkshop;
         var p = Stack(); p.Children.Add(Label(T("Локальная мастерская: установите пример темы или импортируйте собственный ZIP.", "Local workshop: install the example theme or import your own ZIP.")));
         var sample = Path.Combine(AppContext.BaseDirectory, "Catalog", "GraphicDemo.zip");
         if (File.Exists(sample)) { p.Children.Add(Label("GraphicDemo — OpenGDLauncher · 2.0")); p.Children.Add(Action(T("Установить пример", "Install example"), () => { workshop.Import(sample); ShowThemes(); })); }
@@ -459,11 +507,12 @@ public partial class MainWindow : Window
     }
     private void ShowThemes()
     {
+        refreshPage = ShowThemes;
         var p = Stack(); foreach (var name in themes.Names())
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal }; ThemeManifest manifest;
             try { manifest = themes.Load(name); } catch { continue; }
-            row.Children.Add(Label($"{manifest.Name} — {manifest.Author} ({manifest.Version})"));
+            row.Children.Add(Label($"{manifest.Name} — {manifest.Author}"));
             row.Children.Add(Action(T("Применить", "Apply"), () => { settings.Theme = name; SettingsStore.Save(settings); ApplyTheme(); ShowThemes(); }));
             if (name != "Default") row.Children.Add(Action(T("Удалить", "Delete"), () => { if (settings.Theme == name) { settings.Theme = "Default"; SettingsStore.Save(settings); ApplyTheme(); } themes.Delete(name); ShowThemes(); }));
             p.Children.Add(row);
@@ -472,10 +521,8 @@ public partial class MainWindow : Window
     }
     private void ShowSettings()
     {
-        var p = Stack(); p.Children.Add(Label(T("Язык / Language", "Language / Язык")));
-        var combo = new ComboBox { Width = 160, HorizontalAlignment = HorizontalAlignment.Left, ItemsSource = new[] { "Русский", "English" }, SelectedIndex = Ru ? 0 : 1, Margin = new Thickness(5) };
-        combo.SelectionChanged += (_, _) => { settings.Language = combo.SelectedIndex == 0 ? "ru" : "en"; SettingsStore.Save(settings); Localize(); ShowSettings(); }; p.Children.Add(combo);
-        p.Children.Add(new Separator { Margin = new Thickness(5, 20, 5, 12) });
+        refreshPage = ShowSettings;
+        var p = Stack();
         p.Children.Add(new TextBlock { Text = T("Мастерская тем", "Theme workshop"), FontSize = 21, FontWeight = FontWeights.Bold, Margin = new Thickness(5, 0, 5, 8) });
         p.Children.Add(Label(T("Устанавливайте готовые скины и собственные ZIP-архивы. Применение и удаление — в разделе «Мои темы».", "Install built-in skins and your own ZIP archives. Apply or remove them in My themes.")));
         var sample = Path.Combine(AppContext.BaseDirectory, "Catalog", "GraphicDemo.zip");
@@ -486,7 +533,15 @@ public partial class MainWindow : Window
         if (Directory.Exists(designerKit)) p.Children.Add(Action(T("Шаблоны и инструкция", "Templates and guide"), () => GameService.OpenFolder(designerKit)));
         SetPage(T("Настройки", "Settings"), p, SettingsNav);
     }
-    private void ShowAbout() { var p = Stack(); p.Children.Add(Label(T("OpenGDLauncher — бесплатный проект с открытым исходным кодом. Geometry Dash и Geode принадлежат их правообладателям. Для установки игры используется Steam.", "OpenGDLauncher is a free, open source project. Geometry Dash and Geode belong to their respective owners. Steam handles game installation."))); p.Children.Add(Action(T("Поддержать автора", "Support the author"), () => GameService.OpenUrl("https://www.donationalerts.com/r/kifememe"))); SetPage(T("Описание", "Description"), p, AboutNav); }
+    private void ShowAbout() { refreshPage = ShowAbout; var p = Stack(); p.Children.Add(Label(T("OpenGDLauncher — бесплатный проект с открытым исходным кодом. Geometry Dash и Geode принадлежат их правообладателям. Для установки игры используется Steam.", "OpenGDLauncher is a free, open source project. Geometry Dash and Geode belong to their respective owners. Steam handles game installation."))); p.Children.Add(Action(T("Поддержать автора", "Support the author"), () => GameService.OpenUrl("https://www.donationalerts.com/r/kifememe"))); SetPage(T("Описание", "Description"), p, AboutNav); }
+    private void Language_Click(object sender, RoutedEventArgs e)
+    {
+        settings.Language = Ru ? "en" : "ru";
+        SettingsStore.Save(settings);
+        SteamFlyout.Visibility = Visibility.Collapsed;
+        Localize();
+        refreshPage?.Invoke();
+    }
     private void Home_Click(object sender, RoutedEventArgs e) => ShowHome();
     private void Game_Click(object sender, RoutedEventArgs e) => ShowGame();
     private void Geode_Click(object sender, RoutedEventArgs e) => ShowGeode();

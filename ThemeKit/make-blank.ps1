@@ -3,6 +3,7 @@ Add-Type -AssemblyName System.Drawing
 $root=Join-Path $PSScriptRoot 'Blank'
 $assets=[ordered]@{
  'background.png'=@(1000,670);'sidebar.png'=@(200,636);'header.png'=@(1000,34)
+ 'flags/ru.png'=@(24,16);'flags/en.png'=@(24,16)
  'panel.png'=@(744,608);'card.png'=@(744,360);'logo.png'=@(180,100)
  'icon.png'=@(38,38);'decoration.png'=@(85,55);'hero.png'=@(240,240)
  'buttons/normal.png'=@(220,46);'buttons/hover.png'=@(220,46)

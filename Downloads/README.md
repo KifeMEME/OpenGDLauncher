@@ -1,9 +1,9 @@
 # Тестовые сборки OpenGDLauncher
 
-**Актуальная сборка:** [OpenGDLauncher v15 для Windows x64](OpenGDLauncher-v15-win-x64.zip). Распакуйте ZIP и запустите `OpenGDLauncher.exe`. Нужен установленный .NET 8 Desktop Runtime.
+**Актуальная сборка:** [OpenGDLauncher v16 для Windows x64](OpenGDLauncher-v16-win-x64.zip). Распакуйте ZIP и запустите `OpenGDLauncher.exe`. Нужен установленный .NET 8 Desktop Runtime.
 
-В v15 вход по QR открывается в отдельном окне. Исправлен разбор QR-кода DepotDownloader 3.4.0, добавлена кнопка повторного запроса.
+В v16 окно плавно появляется за 0,3 секунды, язык меняется кнопкой с флагом справа сверху, а названия тем показываются без номера версии.
 
-SHA-256: `D405DE5EB020F903D68975696E7720B38D82BC63664A5D35F9E05939D6FA3FD6`
+SHA-256: `5C1D81DD89006BD78B28AF6CD0DD06A7AC50078241CD64F37466C2E2904EC949`
 
-Сборка v14 оставлена для сравнения. Подробности проверки — в [TESTING.md](../TESTING.md).
+Сборка v15 оставлена для сравнения. Подробности проверки — в [TESTING.md](../TESTING.md).

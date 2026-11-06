@@ -124,6 +124,31 @@ internal static class Program
         var app = new App();
         var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
         window.Show();
+        // Screenshots need the final frame; the real launcher keeps its 300 ms startup fade.
+        window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+        window.BeginAnimation(Window.OpacityProperty, null);
+        window.Opacity = 1;
+        if (args.Length > 1 && args[1] == "language_toggle_check")
+        {
+            var original = SettingsStore.Load();
+            try
+            {
+                var button = (System.Windows.Controls.Button)window.FindName("LanguageButton")!;
+                button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                var expected = original.Language == "en" ? "ru" : "en";
+                var updated = SettingsStore.Load();
+                var home = (System.Windows.Controls.Button)window.FindName("HomeNav")!;
+                if (updated.Language != expected || !Equals(home.Content, expected == "ru" ? "Главная" : "Home"))
+                    throw new InvalidOperationException("Language button did not update the saved language and visible navigation.");
+                window.UpdateLayout();
+                var preview = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); preview.Render(window);
+                var languagePng = new PngBitmapEncoder(); languagePng.Frames.Add(BitmapFrame.Create(preview));
+                using var file = File.Create(args[0]); languagePng.Save(file);
+                Console.WriteLine($"language-toggle={original.Language}->{updated.Language}; navigation={home.Content}");
+            }
+            finally { SettingsStore.Save(original); window.Close(); }
+            return;
+        }
         if (args.Length > 1 && args[1] == "steam_qr_window_ui")
         {
             var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
@@ -292,7 +317,7 @@ internal static class Program
         }
         if (args.Length > 1)
         {
-            var method = args[1].ToLowerInvariant() switch { "geode" => "ShowGeode", "settings" => "ShowSettings", "about" => "ShowAbout", "steam" => "ShowSteamFlyout", "purchase" => "LaunchGame", _ => "" };
+            var method = args[1].ToLowerInvariant() switch { "geode" => "ShowGeode", "themes" => "ShowThemes", "settings" => "ShowSettings", "about" => "ShowAbout", "steam" => "ShowSteamFlyout", "purchase" => "LaunchGame", _ => "" };
             if (method.Length > 0) typeof(MainWindow).GetMethod(method, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
         }
         window.UpdateLayout();
