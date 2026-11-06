@@ -50,7 +50,7 @@ public sealed class SteamQrWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
         header.Children.Add(new TextBlock { Text = T("STEAM  /  ВХОД ПО QR", "STEAM  /  QR SIGN-IN"), FontSize = 13, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
-        var topClose = new Button { Content = "×", Width = 30, Height = 30, FontSize = 20, FontFamily = new FontFamily("Segoe UI"), Foreground = foreground, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Cursor = Cursors.Hand };
+        var topClose = new Button { Content = "×", Style = ButtonFillStyle.Create(30, 30, foreground is SolidColorBrush color ? color.Color : Colors.White, Brushes.Transparent, accent, accent, Brushes.Gray), Width = 30, Height = 30, Margin = new Thickness(0), FontSize = 20, FontFamily = new FontFamily("Segoe UI") };
         topClose.Click += (_, _) => Close();
         Grid.SetColumn(topClose, 1);
         header.Children.Add(topClose);

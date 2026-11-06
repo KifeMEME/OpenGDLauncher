@@ -58,6 +58,9 @@ public sealed class VersionPickerWindow : Window
         var buttonNormal = Asset(theme.VersionButtonNormalImage, standard.VersionButtonNormalImage, Pick(null, theme.ButtonColor));
         var buttonHover = Asset(theme.VersionButtonHoverImage, standard.VersionButtonHoverImage, Color.Multiply(Pick(null, theme.ButtonColor), 1.2f));
         var buttonPressed = Asset(theme.VersionButtonPressedImage, standard.VersionButtonPressedImage, Color.Multiply(Pick(null, theme.ButtonColor), .8f));
+        var cardStyle = ButtonFillStyle.Create(160, 49, text, cardNormal, cardHover, cardSelected, cardNormal);
+        var footerStyle = ButtonFillStyle.Create(166, 45, text, buttonNormal, buttonHover, buttonPressed, Brushes.Gray);
+        var closeStyle = ButtonFillStyle.Create(30, 30, text, Brushes.Transparent, new SolidColorBrush(Color.Multiply(selectedColor, .6f)), new SolidColorBrush(selectedColor), Brushes.Gray);
         Title = T("Каталог версий", "Version catalog");
         Width = 720; Height = 630;
         ResizeMode = ResizeMode.NoResize;
@@ -80,7 +83,7 @@ public sealed class VersionPickerWindow : Window
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
         top.Children.Add(new TextBlock { Text = T("Geometry Dash Launcher  /  КАТАЛОГ ВЕРСИЙ", "Geometry Dash Launcher  /  VERSIONS"), FontSize = 11, Foreground = new SolidColorBrush(muted), VerticalAlignment = VerticalAlignment.Center });
-        var close = new Button { Content = "×", Width = 30, Height = 30, FontSize = 20, FontFamily = new FontFamily("Segoe UI"), Foreground = new SolidColorBrush(text), Background = Brushes.Transparent, BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand };
+        var close = new Button { Content = "×", Style = closeStyle, Width = 30, Height = 30, Margin = new Thickness(0), FontSize = 20, FontFamily = new FontFamily("Segoe UI") };
         close.Click += (_, _) => Close();
         Grid.SetColumn(close, 1); top.Children.Add(close); root.Children.Add(top);
 
@@ -96,10 +99,8 @@ public sealed class VersionPickerWindow : Window
             contents.Children.Add(new TextBlock { Text = version.Version, FontSize = 15, FontWeight = FontWeights.Bold });
             var status = DepotDownloaderService.IsDownloaded(version.Version) ? T("Загружена", "Downloaded") : version.IsCurrentSteamVersion ? T("Steam · можно играть", "Steam · playable") : version.LocalDirectory != null ? T("Есть локальная копия", "Local copy found") : DepotDownloaderService.ManifestFor(version.Version) != null ? T("Steam-манифест указан", "Steam manifest listed") : T("Нет Steam-манифеста", "No Steam manifest");
             contents.Children.Add(new TextBlock { Text = status, FontSize = 9, Foreground = new SolidColorBrush(muted), Margin = new Thickness(0, 2, 0, 0) });
-            var card = new Button { Content = contents, Width = 160, Height = 49, Margin = new Thickness(4), Padding = new Thickness(0), Background = cardNormal, Foreground = new SolidColorBrush(text), BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+            var card = new Button { Content = contents, Style = cardStyle, Width = 160, Height = 49, Margin = new Thickness(4), Padding = new Thickness(0), BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch };
             card.Click += (_, _) => { this.selectedVersion = version.Version; RefreshSelection(); };
-            card.MouseEnter += (_, _) => { if (this.selectedVersion != version.Version) card.Background = cardHover; };
-            card.MouseLeave += (_, _) => { card.Background = this.selectedVersion == version.Version ? cardSelected : cardNormal; };
             cards.Add(version.Version, card);
             list.Children.Add(card);
         }
@@ -118,17 +119,11 @@ public sealed class VersionPickerWindow : Window
         statusPanel.Children.Add(progressBar);
         statusPanel.Children.Add(fileNote);
         footer.Children.Add(statusPanel);
-        downloadButton = new Button { Content = T("↓  Скачать", "↓  Download"), Width = 166, Height = 45, Background = buttonNormal, Foreground = new SolidColorBrush(text), BorderThickness = new Thickness(0), FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand };
+        downloadButton = new Button { Content = T("↓  Скачать", "↓  Download"), Style = footerStyle, Width = 166, Height = 45, Margin = new Thickness(0), FontWeight = FontWeights.Bold };
         downloadButton.Click += async (_, _) => await DownloadSelectedAsync();
-        downloadButton.MouseEnter += (_, _) => downloadButton.Background = buttonHover;
-        downloadButton.MouseLeave += (_, _) => downloadButton.Background = buttonNormal;
-        downloadButton.PreviewMouseLeftButtonDown += (_, _) => downloadButton.Background = buttonPressed;
         Grid.SetColumn(downloadButton, 1); footer.Children.Add(downloadButton);
-        chooseButton = new Button { Content = T("Выбрать  →", "Select  →"), Width = 166, Height = 45, Background = buttonNormal, Foreground = new SolidColorBrush(text), BorderThickness = new Thickness(0), FontWeight = FontWeights.Bold, Cursor = System.Windows.Input.Cursors.Hand };
+        chooseButton = new Button { Content = T("Выбрать  →", "Select  →"), Style = footerStyle, Width = 166, Height = 45, Margin = new Thickness(0), FontWeight = FontWeights.Bold };
         chooseButton.Click += (_, _) => { DialogResult = true; Close(); };
-        chooseButton.MouseEnter += (_, _) => chooseButton.Background = buttonHover;
-        chooseButton.MouseLeave += (_, _) => chooseButton.Background = buttonNormal;
-        chooseButton.PreviewMouseLeftButtonDown += (_, _) => chooseButton.Background = buttonPressed;
         Grid.SetColumn(chooseButton, 2); footer.Children.Add(chooseButton);
         Grid.SetRow(footer, 3); root.Children.Add(footer);
         Closing += (_, _) => downloadCancellation?.Cancel();

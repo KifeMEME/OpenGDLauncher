@@ -123,6 +123,7 @@ internal static class Program
         }
         var app = new App();
         var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+        app.DispatcherUnhandledException += (_, error) => { Console.Error.WriteLine(error.Exception); Environment.ExitCode = 1; error.Handled = true; window.Close(); };
         window.Show();
         // Screenshots need the final frame; the real launcher keeps its 300 ms startup fade.
         window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
@@ -148,6 +149,47 @@ internal static class Program
             }
             finally { SettingsStore.Save(original); window.Close(); }
             return;
+        }
+        if (args.Length > 1 && args[1] == "button_hover_check")
+        {
+            var button = (System.Windows.Controls.Button)window.FindName("HomeNav")!;
+            window.Dispatcher.BeginInvoke(() =>
+            {
+                button.ApplyTemplate();
+                var layer = (System.Windows.Controls.Border)button.Template.FindName("HoverFillLayer", button)!;
+                button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                var clip = (RectangleGeometry)layer.Clip;
+                var middle = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(110) };
+                middle.Tick += (_, _) =>
+                {
+                    middle.Stop();
+                    if (clip.Rect.Width <= 0 || clip.Rect.Width >= layer.ActualWidth)
+                        throw new InvalidOperationException($"Hover animation did not reach a partial fill: {clip.Rect.Width}/{layer.ActualWidth}.");
+                    var frame = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); frame.Render(window);
+                    var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(frame));
+                    using (var file = File.Create(args[0])) png.Save(file);
+                    var end = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(190) };
+                    end.Tick += (_, _) =>
+                    {
+                        end.Stop();
+                        if (Math.Abs(clip.Rect.Width - layer.ActualWidth) > 1)
+                            throw new InvalidOperationException("Hover fill did not reach the right edge.");
+                        button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseLeaveEvent });
+                        var reset = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(230) };
+                        reset.Tick += (_, _) =>
+                        {
+                            reset.Stop();
+                            if (clip.Rect.Width > 1) throw new InvalidOperationException("Hover fill did not retract after mouse leave.");
+                            Console.WriteLine("button-hover=partial->full->empty");
+                            window.Close();
+                        };
+                        reset.Start();
+                    };
+                    end.Start();
+                };
+                middle.Start();
+            });
+            app.Run(window); return;
         }
         if (args.Length > 1 && args[1] == "steam_qr_window_ui")
         {

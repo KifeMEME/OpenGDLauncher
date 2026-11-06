@@ -96,7 +96,8 @@ public partial class MainWindow : Window
             Asset(theme.ButtonPressedImage, standard.ButtonPressedImage, Color.Multiply(button, 0.8f)),
             Asset(theme.ButtonDisabledImage, standard.ButtonDisabledImage, Colors.Gray));
         foreach (var item in new[] { HomeNav, GameNav, GeodeNav, WorkshopNav, ThemesNav, SettingsNav, AboutNav }) item.Style = nav;
-        foreach (var item in new[] { LanguageButton, MinimizeButton, CloseButton }) { item.Background = new SolidColorBrush(panel); item.Foreground = new SolidColorBrush(text); item.BorderThickness = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
+        var headerButton = ButtonFillStyle.Create(28, 25, text, Brushes.Transparent, new SolidColorBrush(Color.Multiply(button, .6f)), accentBrush, Brushes.Gray);
+        foreach (var item in new[] { LanguageButton, MinimizeButton, CloseButton }) { item.Style = headerButton; item.Margin = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
         UpdateLanguageFlag();
         UpdateSteamStatus();
         heroSound?.Dispose(); heroSound = null;
@@ -156,28 +157,8 @@ public partial class MainWindow : Window
         }
         catch { return new SolidColorBrush(baseColor) { Opacity = opacity }; }
     }
-    private static Style CreateButtonStyle(double width, double height, Color foreground, Brush normal, Brush hover, Brush pressed, Brush disabled)
-    {
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
-        border.SetBinding(Border.BorderBrushProperty, new System.Windows.Data.Binding("BorderBrush") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
-        border.SetBinding(Border.BorderThicknessProperty, new System.Windows.Data.Binding("BorderThickness") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-        border.AppendChild(content);
-        var style = new Style(typeof(Button));
-        style.Setters.Add(new Setter(Button.TemplateProperty, new ControlTemplate(typeof(Button)) { VisualTree = border }));
-        style.Setters.Add(new Setter(Button.WidthProperty, width)); style.Setters.Add(new Setter(Button.HeightProperty, height));
-        style.Setters.Add(new Setter(Button.MarginProperty, new Thickness(5)));
-        style.Setters.Add(new Setter(Button.BorderBrushProperty, Brushes.Transparent));
-        style.Setters.Add(new Setter(Button.BorderThicknessProperty, new Thickness(0)));
-        style.Setters.Add(new Setter(Button.BackgroundProperty, normal)); style.Setters.Add(new Setter(Button.ForegroundProperty, new SolidColorBrush(foreground)));
-        style.Triggers.Add(new Trigger { Property = Button.IsMouseOverProperty, Value = true, Setters = { new Setter(Button.BackgroundProperty, hover) } });
-        style.Triggers.Add(new Trigger { Property = Button.IsPressedProperty, Value = true, Setters = { new Setter(Button.BackgroundProperty, pressed) } });
-        style.Triggers.Add(new Trigger { Property = Button.IsEnabledProperty, Value = false, Setters = { new Setter(Button.BackgroundProperty, disabled) } });
-        return style;
-    }
+    private static Style CreateButtonStyle(double width, double height, Color foreground, Brush normal, Brush hover, Brush pressed, Brush disabled) =>
+        ButtonFillStyle.Create(width, height, foreground, normal, hover, pressed, disabled);
     private StackPanel Stack() => new() { Margin = new Thickness(6) };
     private void SelectNav(Button selected)
     {
