@@ -11,7 +11,7 @@ internal static class ButtonFillStyle
     private const string HoverLayerName = "HoverFillLayer";
 
     // The overlay reveals the theme's hover PNG without stretching it. Only its clipping width changes.
-    public static Style Create(double width, double height, Color foreground, Brush normal, Brush hover, Brush pressed, Brush disabled)
+    public static Style Create(double width, double height, Color foreground, Brush normal, Brush hover, Brush pressed, Brush disabled, bool animateHover = true)
     {
         var surface = new FrameworkElementFactory(typeof(Border));
         surface.SetValue(UIElement.ClipToBoundsProperty, true);
@@ -69,8 +69,11 @@ internal static class ButtonFillStyle
         style.Setters.Add(new Setter(Button.BackgroundProperty, normal));
         style.Setters.Add(new Setter(Button.ForegroundProperty, new SolidColorBrush(foreground)));
         style.Setters.Add(new Setter(Button.CursorProperty, Cursors.Hand));
-        style.Setters.Add(new EventSetter(UIElement.MouseEnterEvent, new MouseEventHandler((sender, _) => Animate(sender, 1, 240))));
-        style.Setters.Add(new EventSetter(UIElement.MouseLeaveEvent, new MouseEventHandler((sender, _) => Animate(sender, 0, 190))));
+        if (animateHover)
+        {
+            style.Setters.Add(new EventSetter(UIElement.MouseEnterEvent, new MouseEventHandler((sender, _) => Animate(sender, 1, 240))));
+            style.Setters.Add(new EventSetter(UIElement.MouseLeaveEvent, new MouseEventHandler((sender, _) => Animate(sender, 0, 190))));
+        }
         return style;
     }
 

@@ -121,14 +121,63 @@ internal static class Program
             Console.WriteLine($"{checkedAccount.AccountMatches}|{checkedAccount.HasInstallRecord}");
             return;
         }
+        if (args.Length > 1 && args[1] == "backup_check")
+        {
+            var root = Path.Combine(Environment.CurrentDirectory, "dist", "backup-check-" + Guid.NewGuid().ToString("N"));
+            var source = Path.Combine(root, "source"); var destination = Path.Combine(root, "destination");
+            Directory.CreateDirectory(Path.Combine(source, "geode")); Directory.CreateDirectory(destination);
+            try
+            {
+                File.WriteAllText(Path.Combine(source, "CCGameManager.dat"), "save");
+                File.WriteAllText(Path.Combine(source, "geode", "settings.json"), "settings");
+                File.WriteAllText(Path.Combine(source, "song.mp3"), "music");
+                File.WriteAllText(Path.Combine(source, "geode", "sound.ogg"), "music");
+                var result = GameBackupService.CreateBackupAsync(source, destination, CancellationToken.None).GetAwaiter().GetResult();
+                if (result.FilesCopied != 2 || result.AudioFilesSkipped != 2 || !File.Exists(Path.Combine(result.Folder, "CCGameManager.dat")) || !File.Exists(Path.Combine(result.Folder, "geode", "settings.json")) || File.Exists(Path.Combine(result.Folder, "song.mp3")))
+                    throw new InvalidOperationException("Backup did not preserve non-audio files and skip music.");
+                try { GameBackupService.CreateBackupAsync(source, source, CancellationToken.None).GetAwaiter().GetResult(); throw new InvalidOperationException("Backup into source was accepted."); }
+                catch (InvalidOperationException error) when (error.Message.Contains("вне локальных данных")) { }
+                Console.WriteLine("backup=2 files copied; 2 audio files skipped; source destination rejected");
+            }
+            finally
+            {
+                var expected = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, "dist")) + Path.DirectorySeparatorChar;
+                if (Path.GetFullPath(root).StartsWith(expected, StringComparison.OrdinalIgnoreCase)) Directory.Delete(root, true);
+            }
+            return;
+        }
         var app = new App();
         var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
         app.DispatcherUnhandledException += (_, error) => { Console.Error.WriteLine(error.Exception); Environment.ExitCode = 1; error.Handled = true; window.Close(); };
         window.Show();
         // Screenshots need the final frame; the real launcher keeps its 300 ms startup fade.
         window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+        if (args.Length > 1 && args[1] == "startup_animation_check")
+        {
+            var shell = (FrameworkElement)window.FindName("Shell")!;
+            var slide = (TranslateTransform)shell.RenderTransform;
+            if (slide.X >= 0) throw new InvalidOperationException("Startup entrance did not begin left of its final position.");
+            foreach (var name in new[] { "LanguageButton", "MinimizeButton", "CloseButton" })
+            {
+                var button = (System.Windows.Controls.Button)window.FindName(name)!;
+                button.ApplyTemplate();
+                var layer = (System.Windows.Controls.Border)button.Template.FindName("HoverFillLayer", button)!;
+                button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                if (((RectangleGeometry)layer.Clip).Rect.Width != 0) throw new InvalidOperationException(name + " still has hover animation.");
+            }
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(390) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (Math.Abs(slide.X) > 1 || Math.Abs(window.Opacity - 1) > .01) throw new InvalidOperationException("Startup entrance did not finish at full size and opacity.");
+                Console.WriteLine("startup=left-to-right, 300 ms; header buttons have no hover animation");
+                window.Close();
+            };
+            timer.Start(); app.Run(window); return;
+        }
         window.BeginAnimation(Window.OpacityProperty, null);
         window.Opacity = 1;
+        if (((FrameworkElement)window.FindName("Shell")!).RenderTransform is TranslateTransform previewSlide) { previewSlide.BeginAnimation(TranslateTransform.XProperty, null); previewSlide.X = 0; }
         if (args.Length > 1 && args[1] == "language_toggle_check")
         {
             var original = SettingsStore.Load();

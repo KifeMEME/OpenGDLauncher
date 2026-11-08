@@ -96,7 +96,7 @@ public partial class MainWindow : Window
             Asset(theme.ButtonPressedImage, standard.ButtonPressedImage, Color.Multiply(button, 0.8f)),
             Asset(theme.ButtonDisabledImage, standard.ButtonDisabledImage, Colors.Gray));
         foreach (var item in new[] { HomeNav, GameNav, GeodeNav, WorkshopNav, ThemesNav, SettingsNav, AboutNav }) item.Style = nav;
-        var headerButton = ButtonFillStyle.Create(28, 25, text, Brushes.Transparent, new SolidColorBrush(Color.Multiply(button, .6f)), accentBrush, Brushes.Gray);
+        var headerButton = ButtonFillStyle.Create(28, 25, text, Brushes.Transparent, Brushes.Transparent, accentBrush, Brushes.Gray, animateHover: false);
         foreach (var item in new[] { LanguageButton, MinimizeButton, CloseButton }) { item.Style = headerButton; item.Margin = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
         UpdateLanguageFlag();
         UpdateSteamStatus();
@@ -139,6 +139,13 @@ public partial class MainWindow : Window
     {
         if (startupAnimated) return;
         startupAnimated = true;
+        // Start the entrance slightly to the left, independent of the cursor's position.
+        var entrance = new TranslateTransform(-18, 0);
+        Shell.RenderTransform = entrance;
+        entrance.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-18, 0, TimeSpan.FromMilliseconds(300))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        });
         Opacity = 1;
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300))
         {
@@ -519,7 +526,31 @@ public partial class MainWindow : Window
         p.Children.Add(Action(T("Установить ZIP", "Install ZIP"), () => { var dialog = new OpenFileDialog { Filter = "Theme ZIP|*.zip" }; if (dialog.ShowDialog() == true) { workshop.Import(dialog.FileName); ShowThemes(); } }));
         var designerKit = Path.Combine(AppContext.BaseDirectory, "ThemeKit");
         if (Directory.Exists(designerKit)) p.Children.Add(Action(T("Шаблоны и инструкция", "Templates and guide"), () => GameService.OpenFolder(designerKit)));
+        p.Children.Add(new TextBlock { Text = T("Бекап Geometry Dash", "Geometry Dash backup"), FontSize = 21, FontWeight = FontWeights.Bold, Margin = new Thickness(5, 18, 5, 8) });
+        p.Children.Add(Label(T("Сохранить локальные данные игры без скачанной музыки в выбранную папку.", "Save local game data without downloaded music to a folder you choose.")));
+        var backup = new Button { Content = T("Бекап", "Backup"), HorizontalAlignment = HorizontalAlignment.Left, Style = actionStyle };
+        backup.Click += async (_, _) => await BackupGameDataAsync(backup);
+        p.Children.Add(backup);
         SetPage(T("Настройки", "Settings"), p, SettingsNav);
+    }
+    private async Task BackupGameDataAsync(Button button)
+    {
+        var dialog = new OpenFolderDialog { Title = T("Куда сохранить бекап Geometry Dash", "Choose a folder for the Geometry Dash backup") };
+        if (dialog.ShowDialog() != true) return;
+        button.IsEnabled = false;
+        Status.Text = T("Создаём бекап...", "Creating backup...");
+        try
+        {
+            var result = await GameBackupService.CreateBackupAsync(dialog.FolderName);
+            Status.Text = T($"Бекап готов: {result.FilesCopied} файлов, музыка пропущена: {result.AudioFilesSkipped}.", $"Backup complete: {result.FilesCopied} files, music skipped: {result.AudioFilesSkipped}.");
+            MessageBox.Show(T($"Бекап сохранён в папке:\n{result.Folder}", $"Backup saved to:\n{result.Folder}"), T("Бекап готов", "Backup complete"), MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception error)
+        {
+            Status.Text = error.Message;
+            MessageBox.Show(error.Message, T("Ошибка бекапа", "Backup error"), MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally { button.IsEnabled = true; }
     }
     private void ShowAbout() { refreshPage = ShowAbout; var p = Stack(); p.Children.Add(Label(T("OpenGD Launcher это бесплатный проект с открытым исходным кодом. Если вам не жалко, то можете поддержать автора продвижением данного лаунчера, или же кинуть денежку на кофе! :3", "OpenGD Launcher is a free, open-source project. If you'd like, you can support the author by sharing the launcher or buying them a coffee! :3"))); p.Children.Add(Action(T("Поддержать автора", "Support the author"), () => GameService.OpenUrl("https://www.donationalerts.com/r/kifememe"))); SetPage(T("Описание", "Description"), p, AboutNav); }
     private void Language_Click(object sender, RoutedEventArgs e)
