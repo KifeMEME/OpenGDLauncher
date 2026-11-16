@@ -8,11 +8,17 @@
     <AssemblyName>OpenGDLauncher</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.10.2" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
     <Resource Include="Assets\Fonts\ofont.ru_Lemon.ttf" />
     <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
     <ProjectReference Include="..\Launcher.Themes\Launcher.Themes.csproj" />
     <ProjectReference Include="..\Launcher.Workshop\Launcher.Workshop.csproj" />
     <Content Include="Assets\awee.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Sounds\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Videos\playlist.txt" Link="Videos\playlist.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Videos\README.md" Link="Videos\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Videos\*.mp4" Link="Videos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ThemeKit\GraphicDemo.zip" Link="Catalog\GraphicDemo.zip" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ThemeAssets\Default\**\*" Link="ThemeAssets\Default\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\КАК_СОЗДАТЬ_СКИН.md" Link="КАК_СОЗДАТЬ_СКИН.md" CopyToOutputDirectory="PreserveNewest" />

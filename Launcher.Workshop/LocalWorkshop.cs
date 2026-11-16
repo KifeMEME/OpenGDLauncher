@@ -25,7 +25,10 @@ public sealed class LocalWorkshop
             {
                 var relative = entry.FullName.Replace('\\', '/');
                 if (relative.EndsWith('/')) continue;
-                if (relative.StartsWith('/') || relative.Contains("..") || relative.Contains(':') || (!relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) && !relative.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !relative.Equals("hero.wav", StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Unsafe archive entry.");
+                var isSound = relative.Equals("hero.wav", StringComparison.OrdinalIgnoreCase)
+                    || relative.Equals("sounds/button-hover.wav", StringComparison.OrdinalIgnoreCase)
+                    || relative.Equals("sounds/button-click.wav", StringComparison.OrdinalIgnoreCase);
+                if (relative.StartsWith('/') || relative.Contains("..") || relative.Contains(':') || (!relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) && !relative.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !isSound)) throw new InvalidDataException("Unsafe archive entry.");
                 var limit = relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) ? 64_000 : relative.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ? 5_000_000 : 10_000_000;
                 if (entry.Length > limit) throw new InvalidDataException("File too large.");
                 var output = Path.GetFullPath(Path.Combine(target, relative));

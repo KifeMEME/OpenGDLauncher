@@ -147,7 +147,10 @@ internal static class Program
             return;
         }
         var app = new App();
-        var window = new MainWindow { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
+        var previewTestStore = args.Length > 1 && args[1] is "video_ui" or "video_all_ui" or "video_bad_ui" or "video_toggle_ui" or "steam_flyout_video_ui"
+            ? new PreviewSettingsStore(Path.Combine(Path.GetTempPath(), "opengd-preview-test-" + Guid.NewGuid().ToString("N")))
+            : null;
+        var window = new MainWindow(null, previewTestStore) { Width = 1000, Height = 670, WindowStartupLocation = WindowStartupLocation.Manual, Left = args.Length > 1 && args[1] == "video_ui" ? 20 : -2000, Top = args.Length > 1 && args[1] == "video_ui" ? 20 : -2000 };
         app.DispatcherUnhandledException += (_, error) => { Console.Error.WriteLine(error.Exception); Environment.ExitCode = 1; error.Handled = true; window.Close(); };
         window.Show();
         // Screenshots need the final frame; the real launcher keeps its 300 ms startup fade.
@@ -239,6 +242,133 @@ internal static class Program
                 middle.Start();
             });
             app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "video_ui")
+        {
+            Console.WriteLine("video-test:start");
+            var field = typeof(MainWindow).GetField("homeVideoPlayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var indexField = typeof(MainWindow).GetField("homeVideoIndex", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var tintField = typeof(MainWindow).GetField("homeVideoTint", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var first = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            first.Tick += (_, _) =>
+            {
+                first.Stop();
+                var video = (LibVLCSharp.Shared.MediaPlayer?)field.GetValue(window);
+                var tint = (System.Windows.Controls.Border?)tintField.GetValue(window);
+                var lastError = typeof(MainWindow).GetField("homeVideoLastError", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(window);
+                Console.WriteLine($"video-test:first={video?.Media?.Mrl}, playing={video?.IsPlaying}, error={lastError}");
+                if (video == null || !video.IsPlaying || video.Volume != 0 || video.Media?.Mrl.EndsWith("01-GRIEF.mp4") != true || (int)indexField.GetValue(window)! != 1 || tint?.Opacity != .5)
+                { Environment.ExitCode = 1; window.Close(); return; }
+                var frame = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); frame.Render(window);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(frame));
+                using (var file = File.Create(args[0])) png.Save(file);
+                var second = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(9) };
+                second.Tick += (_, _) =>
+                {
+                    second.Stop();
+                    video = (LibVLCSharp.Shared.MediaPlayer?)field.GetValue(window);
+                    Console.WriteLine($"video-test:second={video?.Media?.Mrl}, playing={video?.IsPlaying}");
+                    if (video?.Media?.Mrl.EndsWith("02-Artemis-13.mp4") != true || tint?.Opacity != .5)
+                        throw new InvalidOperationException("Video did not switch after 10 seconds.");
+                    Console.WriteLine("video=50% opacity, muted, switched after 10 seconds");
+                    ((System.Windows.Controls.Button)window.FindName("GeodeNav")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    if (field.GetValue(window) != null) throw new InvalidOperationException("Video playback continued after leaving Home.");
+                    Console.WriteLine("video=stopped on page change");
+                    window.Close();
+                };
+                second.Start();
+            };
+            first.Start(); app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "video_all_ui")
+        {
+            var names = new[] { "01-GRIEF.mp4", "02-Artemis-13.mp4", "03-Society.mp4", "04-Thinking-Space-II.mp4", "05-Amethyst.mp4", "09-ORBIT.mp4", "20-andromeda.mp4" };
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var playerField = typeof(MainWindow).GetField("homeVideoPlayer", flags)!;
+            var homeTimer = (System.Windows.Threading.DispatcherTimer?)typeof(MainWindow).GetField("homeVideoTimer", flags)!.GetValue(window);
+            if (homeTimer != null) homeTimer.Interval = TimeSpan.FromMinutes(1);
+            var advance = typeof(MainWindow).GetMethod("PlayNextHomeVideo", flags)!;
+            var index = 0;
+            var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            check.Tick += (_, _) =>
+            {
+                var player = (LibVLCSharp.Shared.MediaPlayer?)playerField.GetValue(window);
+                if (player?.IsPlaying != true || player.Media?.Mrl.EndsWith(names[index], StringComparison.OrdinalIgnoreCase) != true)
+                    throw new InvalidOperationException($"Video failed to play: {names[index]}");
+                if (++index == names.Length)
+                {
+                    check.Stop(); Console.WriteLine("video=all seven clips decoded"); window.Close(); return;
+                }
+                advance.Invoke(window, null);
+            };
+            check.Start(); app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "video_bad_ui")
+        {
+            var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            check.Tick += (_, _) =>
+            {
+                check.Stop();
+                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                var player = typeof(MainWindow).GetField("homeVideoPlayer", flags)!.GetValue(window);
+                var disabled = (bool)typeof(MainWindow).GetField("homeVideoDisabled", flags)!.GetValue(window)!;
+                if (player != null || !disabled) throw new InvalidOperationException("Broken video did not fall back to the normal card.");
+                Console.WriteLine("video=fallback to static card");
+                window.Close();
+            };
+            check.Start(); app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "video_toggle_ui")
+        {
+            var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            check.Tick += (_, _) =>
+            {
+                check.Stop();
+                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                var buttonField = typeof(MainWindow).GetField("homePreviewButton", flags)!;
+                var playerField = typeof(MainWindow).GetField("homeVideoPlayer", flags)!;
+                var firstButton = (System.Windows.Controls.Button)buttonField.GetValue(window)!;
+                if (previewTestStore!.Load().EnableVideoPreview != true || playerField.GetValue(window) == null)
+                    throw new InvalidOperationException("Video did not start with the default configuration.");
+                firstButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                if (previewTestStore.Load().EnableVideoPreview || playerField.GetValue(window) != null)
+                    throw new InvalidOperationException("Disable preview did not persist and stop playback.");
+                var secondButton = (System.Windows.Controls.Button)buttonField.GetValue(window)!;
+                if (!Equals(secondButton.Content, "Возобновить предпросмотр"))
+                    throw new InvalidOperationException("Resume preview label was not shown.");
+                secondButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                if (!previewTestStore.Load().EnableVideoPreview || playerField.GetValue(window) == null)
+                    throw new InvalidOperationException("Resume preview did not persist and restart playback.");
+                Console.WriteLine("preview=disabled, persisted, resumed");
+                window.Close();
+            };
+            check.Start(); app.Run(window); return;
+        }
+        if (args.Length > 1 && args[1] == "steam_flyout_video_ui")
+        {
+            var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            check.Tick += (_, _) =>
+            {
+                check.Stop();
+                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                var playerField = typeof(MainWindow).GetField("homeVideoPlayer", flags)!;
+                var suspendedField = typeof(MainWindow).GetField("homeVideoSuspendedForSteam", flags)!;
+                var flyout = (System.Windows.Controls.Border)window.FindName("SteamFlyout")!;
+                if (playerField.GetValue(window) == null) throw new InvalidOperationException("Video was not active before Steam sign-in.");
+                typeof(MainWindow).GetMethod("ShowSteamFlyout", flags)!.Invoke(window, null);
+                if (playerField.GetValue(window) != null || !(bool)suspendedField.GetValue(window)! || flyout.Visibility != Visibility.Visible)
+                    throw new InvalidOperationException("Video was not suspended behind the Steam flyout.");
+                window.UpdateLayout();
+                var frame = new RenderTargetBitmap(1000, 670, 96, 96, PixelFormats.Pbgra32); frame.Render(window);
+                var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(frame));
+                using (var file = File.Create(args[0])) png.Save(file);
+                typeof(MainWindow).GetMethod("CloseSteamFlyout", flags)!.Invoke(window, [true]);
+                if (playerField.GetValue(window) == null || (bool)suspendedField.GetValue(window)! || flyout.Visibility != Visibility.Collapsed)
+                    throw new InvalidOperationException("Video did not resume after closing the Steam flyout.");
+                Console.WriteLine("steam-flyout=video suspended and resumed");
+                window.Close();
+            };
+            check.Start(); app.Run(window); return;
         }
         if (args.Length > 1 && args[1] == "steam_qr_window_ui")
         {

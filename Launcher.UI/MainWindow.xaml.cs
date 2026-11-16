@@ -9,6 +9,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Media.Animation;
 using Polygon = System.Windows.Shapes.Polygon;
+using LibVLCSharp.Shared;
+using LibVLCSharp.WPF;
+using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
 namespace Launcher.UI;
 
@@ -16,6 +19,8 @@ public partial class MainWindow : Window
 {
     private static readonly FontFamily BundledFont = new(new Uri("pack://application:,,,/"), "/OpenGDLauncher;component/Assets/Fonts/#Lemon/Milk(RUS BY LYAJKA)");
     private readonly AppSettings settings = SettingsStore.Load();
+    private readonly PreviewSettingsStore previewStore;
+    private PreviewSettings previewSettings;
     private readonly ThemeService themes;
     private LocalWorkshop workshop = null!;
     private readonly GeodeCatalogService geodeCatalog = new();
@@ -28,18 +33,34 @@ public partial class MainWindow : Window
     private Brush accentBrush = Brushes.MediumPurple;
     private Border? steamWarning;
     private System.Media.SoundPlayer? heroSound;
+    private VideoView? homeVideo;
+    private LibVLC? homeVideoEngine;
+    private MediaPlayer? homeVideoPlayer;
+    private Media? homeVideoMedia;
+    private Border? homeVideoTint;
+    private Button? homePreviewButton;
+    private bool homeVideoSwitching;
+    private System.Windows.Threading.DispatcherTimer? homeVideoTimer;
+    private IReadOnlyList<string> homeVideoFiles = [];
+    private int homeVideoIndex;
+    private int homeVideoFailures;
+    private bool homeVideoDisabled;
+    private bool homeVideoSuspendedForSteam;
+    private string? homeVideoLastError;
     private Action? refreshPage;
     private bool startupAnimated;
     private bool Ru => settings.Language != "en";
     private string T(string ru, string en) => Ru ? ru : en;
-    public MainWindow() : this(null) { }
-    public MainWindow(ThemeService? themeService)
+    public MainWindow() : this(null, null) { }
+    public MainWindow(ThemeService? themeService, PreviewSettingsStore? videoSettingsStore = null)
     {
+        previewStore = videoSettingsStore ?? new PreviewSettingsStore();
+        previewSettings = previewStore.Load();
         themes = themeService ?? new ThemeService(Path.Combine(SettingsStore.DirectoryPath, "Themes"));
         InitializeComponent();
         WorkshopNav.Visibility = Visibility.Collapsed;
         workshop = new LocalWorkshop(themes);
-        Closed += (_, _) => heroSound?.Dispose();
+        Closed += (_, _) => { StopHomeVideo(); heroSound?.Dispose(); };
         if (!GameService.IsValid(settings.GameDirectory)) settings.GameDirectory = GameService.Detect() ?? "";
         if (string.IsNullOrWhiteSpace(settings.SelectedVersion)) settings.SelectedVersion = GameVersionCatalog.CurrentSteamVersion() ?? "";
         ApplyTheme(); Localize(); ShowHome();
@@ -100,6 +121,11 @@ public partial class MainWindow : Window
         foreach (var item in new[] { LanguageButton, MinimizeButton, CloseButton }) { item.Style = headerButton; item.Margin = new Thickness(0); item.FontFamily = new FontFamily("Segoe UI"); }
         UpdateLanguageFlag();
         UpdateSteamStatus();
+        ButtonSoundService.Configure(
+            themes.ResolveSound(settings.Theme, theme.ButtonHoverSound, standard.ButtonHoverSound)
+                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-hover.wav"),
+            themes.ResolveSound(settings.Theme, theme.ButtonClickSound, standard.ButtonClickSound)
+                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-click.wav"));
         heroSound?.Dispose(); heroSound = null;
         if (theme.HeroSoundEnabled)
         {
@@ -222,18 +248,65 @@ public partial class MainWindow : Window
         catch (InvalidOperationException) { }
         finally { process.Dispose(); }
     }
-    private void SetPage(string heading, UIElement content, Button? navigation = null) { Heading.Text = heading; Subtitle.Text = T("Управление игрой и оформлением", "Manage game and appearance"); Page.Content = new Border { Background = contentCardBrush, CornerRadius = new CornerRadius(10), Padding = new Thickness(12), Child = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; Status.Text = ""; if (navigation != null) SelectNav(navigation); }
+    private void SetPage(string heading, UIElement content, Button? navigation = null) { SteamFlyout.Visibility = Visibility.Collapsed; homeVideoSuspendedForSteam = false; StopHomeVideo(); Heading.Text = heading; Subtitle.Text = T("Управление игрой и оформлением", "Manage game and appearance"); Page.Content = new Border { Background = contentCardBrush, CornerRadius = new CornerRadius(10), Padding = new Thickness(12), Child = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; Status.Text = ""; if (navigation != null) SelectNav(navigation); }
     private void ShowHome()
     {
+        if (SteamFlyout.Visibility == Visibility.Visible) { SteamFlyout.Visibility = Visibility.Collapsed; homeVideoSuspendedForSteam = false; }
+        StopHomeVideo();
         refreshPage = ShowHome;
         Heading.Text = "Geometry Dash";
         Subtitle.Text = T("Игра и моды — в одном месте.", "Your game and mods in one place.");
         SelectNav(HomeNav);
         var layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(68) });
-        var card = new Border { Background = cardBrush, BorderBrush = accentBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(13), Height = 360, VerticalAlignment = VerticalAlignment.Top };
-        var contents = new Grid(); contents.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) }); contents.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(94) });
+        var card = new Border { Background = cardBrush, BorderBrush = accentBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Height = 360, VerticalAlignment = VerticalAlignment.Top };
+        var cardLayers = new Grid();
+        Grid? homeVideoOverlay = null;
+        try
+        {
+            homeVideoFiles = homeVideoDisabled || homeVideoSuspendedForSteam || !previewSettings.EnableVideoPreview ? [] : HomeVideoPlaylist.Load(Path.Combine(AppContext.BaseDirectory, "Videos"));
+            if (homeVideoFiles.Count > 0)
+            {
+                LibVLCSharp.Shared.Core.Initialize();
+                homeVideoEngine = new LibVLC("--quiet", "--no-video-title-show");
+                homeVideoPlayer = new MediaPlayer(homeVideoEngine) { Volume = 0 };
+                homeVideoPlayer.Playing += (_, _) => Dispatcher.BeginInvoke(() =>
+                {
+                    if (homeVideoPlayer == null) return;
+                    homeVideoFailures = 0;
+                    homeVideoSwitching = false;
+                    FadeHomeVideoTint(.5, 350);
+                    homeVideoTimer?.Start();
+                });
+                homeVideoPlayer.EndReached += (_, _) => Dispatcher.BeginInvoke(BeginHomeVideoTransition);
+                homeVideoPlayer.EncounteredError += (_, _) => Dispatcher.BeginInvoke(() =>
+                {
+                    if (homeVideoPlayer == null) return;
+                    homeVideoLastError = "LibVLC could not decode the video.";
+                    if (++homeVideoFailures >= homeVideoFiles.Count) { homeVideoDisabled = true; ShowHome(); return; }
+                    PlayNextHomeVideo();
+                });
+                homeVideo = new VideoView { MediaPlayer = homeVideoPlayer, Margin = new Thickness(1) };
+                homeVideoOverlay = new Grid();
+                homeVideoTint = new Border { Background = cardBrush, Opacity = 1, IsHitTestVisible = false };
+                homeVideoOverlay.Children.Add(homeVideoTint);
+                homeVideo.Content = homeVideoOverlay;
+                cardLayers.Children.Add(homeVideo);
+                homeVideoTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+                homeVideoTimer.Tick += (_, _) => BeginHomeVideoTransition();
+                homeVideo.Loaded += (_, _) => PlayNextHomeVideo();
+            }
+        }
+        catch (Exception error)
+        {
+            homeVideoLastError = error.Message;
+            homeVideoDisabled = true;
+            StopHomeVideo();
+            cardLayers.Children.Clear();
+            homeVideoOverlay = null;
+        }
+        var contents = new Grid { Margin = new Thickness(13) }; contents.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) }); contents.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
         var info = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
         var displayFont = FontFamily;
         var activeTheme = themes.Load(settings.Theme); var defaultTheme = themes.Load("Default");
@@ -246,6 +319,8 @@ public partial class MainWindow : Window
         info.Children.Add(new TextBlock { Text = T("ВЫБРАННАЯ ВЕРСИЯ GD", "SELECTED GD VERSION"), FontFamily = displayFont, FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(8, 15, 0, 0) });
         var selectedGameVersion = settings.SelectedVersion.Length > 0 ? settings.SelectedVersion : "—";
         info.Children.Add(new TextBlock { Text = selectedGameVersion, FontFamily = displayFont, FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(8, 8, 0, 0) });
+        // LibVLC renders overlay controls in a separate WPF window, so inherited text colors do not cross the boundary.
+        foreach (var label in info.Children.OfType<TextBlock>()) label.Foreground = Foreground;
         contents.Children.Add(info);
         var cube = new Canvas { Width = 240, Height = 240, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var heroFile = themes.ResolveImage(settings.Theme, activeTheme.HeroImage, defaultTheme.HeroImage);
@@ -267,10 +342,22 @@ public partial class MainWindow : Window
             };
             cube.Children.Add(hero);
         }
-        Grid.SetColumn(cube, 1); contents.Children.Add(cube); card.Child = contents; layout.Children.Add(card);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(Action(T("Выбрать версию", "Choose version"), ShowVersionPicker));
-        actions.Children.Add(Action(T("▶  Играть", "▶  Play"), LaunchGame));
+        Grid.SetColumn(cube, 1); contents.Children.Add(cube);
+        if (homeVideoOverlay != null) homeVideoOverlay.Children.Add(contents);
+        else cardLayers.Children.Add(contents);
+        card.Child = cardLayers; layout.Children.Add(card);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
+        var versionActions = new StackPanel { Width = 230, VerticalAlignment = VerticalAlignment.Bottom };
+        homePreviewButton = Action(previewSettings.EnableVideoPreview ? T("Отключить предпросмотр", "Disable preview") : T("Возобновить предпросмотр", "Resume preview"), ToggleVideoPreview);
+        homePreviewButton.Width = 180; homePreviewButton.Height = 26; homePreviewButton.FontSize = 10;
+        homePreviewButton.HorizontalAlignment = HorizontalAlignment.Center;
+        homePreviewButton.Margin = new Thickness(5, 0, 5, 2);
+        versionActions.Children.Add(homePreviewButton);
+        versionActions.Children.Add(Action(T("Выбрать версию", "Choose version"), ShowVersionPicker));
+        actions.Children.Add(versionActions);
+        var playAction = Action(T("▶  Играть", "▶  Play"), LaunchGame);
+        playAction.VerticalAlignment = VerticalAlignment.Bottom;
+        actions.Children.Add(playAction);
         Grid.SetRow(actions, 1); layout.Children.Add(actions);
         var warningRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         warningRow.Children.Add(new TextBlock { Text = T("Нет подтверждённой установки Steam. Если игры нет в библиотеке, купите её.", "No confirmed Steam installation. Buy the game if it is not in your library."), Width = 360, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 });
@@ -279,6 +366,48 @@ public partial class MainWindow : Window
         steamWarning = new Border { Background = contentCardBrush, BorderBrush = accentBrush, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(7), Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Bottom, Child = warningRow };
         layout.Children.Add(steamWarning);
         Page.Content = layout; Status.Text = "";
+    }
+    private void ToggleVideoPreview()
+    {
+        var updated = new PreviewSettings { EnableVideoPreview = !previewSettings.EnableVideoPreview };
+        previewStore.Save(updated);
+        previewSettings = updated;
+        homeVideoDisabled = false;
+        ShowHome();
+    }
+    private void PlayNextHomeVideo()
+    {
+        if (homeVideoPlayer == null || homeVideoEngine == null || homeVideoFiles.Count == 0) return;
+        homeVideoMedia?.Dispose();
+        homeVideoMedia = new Media(homeVideoEngine, new Uri(homeVideoFiles[homeVideoIndex], UriKind.Absolute));
+        homeVideoPlayer.Play(homeVideoMedia);
+        homeVideoIndex = (homeVideoIndex + 1) % homeVideoFiles.Count;
+    }
+    private void BeginHomeVideoTransition()
+    {
+        if (homeVideoPlayer == null || homeVideoSwitching) return;
+        homeVideoSwitching = true;
+        homeVideoTimer?.Stop();
+        FadeHomeVideoTint(1, 250, () => { if (homeVideoPlayer != null) PlayNextHomeVideo(); });
+    }
+    private void FadeHomeVideoTint(double target, int milliseconds, Action? completed = null)
+    {
+        var tint = homeVideoTint;
+        if (tint == null) { completed?.Invoke(); return; }
+        var animation = new DoubleAnimation { From = tint.Opacity, To = target, Duration = TimeSpan.FromMilliseconds(milliseconds), FillBehavior = FillBehavior.Stop };
+        animation.Completed += (_, _) => { tint.Opacity = target; completed?.Invoke(); };
+        tint.BeginAnimation(UIElement.OpacityProperty, animation);
+    }
+    private void StopHomeVideo()
+    {
+        homeVideoTimer?.Stop(); homeVideoTimer = null;
+        homeVideoTint?.BeginAnimation(UIElement.OpacityProperty, null);
+        homeVideoTint = null; homeVideoSwitching = false;
+        homeVideoPlayer?.Stop(); homeVideoPlayer?.Dispose(); homeVideoPlayer = null;
+        homeVideoMedia?.Dispose(); homeVideoMedia = null;
+        homeVideo?.Dispose(); homeVideo = null;
+        homeVideoEngine?.Dispose(); homeVideoEngine = null;
+        homeVideoFiles = []; homeVideoIndex = 0; homeVideoFailures = 0;
     }
     private static void AnimateHero(Image hero)
     {
@@ -557,7 +686,8 @@ public partial class MainWindow : Window
     {
         settings.Language = Ru ? "en" : "ru";
         SettingsStore.Save(settings);
-        SteamFlyout.Visibility = Visibility.Collapsed;
+        CloseSteamFlyout(resumeVideo: false);
+        homeVideoSuspendedForSteam = false;
         Localize();
         refreshPage?.Invoke();
     }
@@ -570,7 +700,7 @@ public partial class MainWindow : Window
     private void About_Click(object sender, RoutedEventArgs e) => ShowAbout();
     private void SteamCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (SteamFlyout.Visibility == Visibility.Visible) SteamFlyout.Visibility = Visibility.Collapsed;
+        if (SteamFlyout.Visibility == Visibility.Visible) CloseSteamFlyout();
         else ShowSteamFlyout();
         e.Handled = true;
     }
@@ -581,10 +711,13 @@ public partial class MainWindow : Window
     }
     private void ShowSteamFlyout()
     {
+        // LibVLC's WPF video uses a separate native window that can cover this in-window flyout.
+        // Rebuild the home card without video until every Steam sign-in window has closed.
+        if (homeVideo != null) { homeVideoSuspendedForSteam = true; ShowHome(); }
         var panel = new StackPanel();
         var heading = new DockPanel();
         var close = new Button { Content = "×", Width = 26, Height = 24, HorizontalAlignment = HorizontalAlignment.Right, FontFamily = new FontFamily("Segoe UI"), Foreground = Foreground, Background = accentBrush, BorderThickness = new Thickness(0) };
-        close.Click += (_, _) => SteamFlyout.Visibility = Visibility.Collapsed;
+        close.Click += (_, _) => CloseSteamFlyout();
         DockPanel.SetDock(close, Dock.Right); heading.Children.Add(close);
         heading.Children.Add(new TextBlock { Text = T("Вход в Steam", "Steam sign-in"), FontSize = 19, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
         panel.Children.Add(heading);
@@ -607,8 +740,8 @@ public partial class MainWindow : Window
             var window = new SteamQrWindow(login.Text.Trim(), Ru, FontFamily, contentCardBrush, Foreground, accentBrush, actionStyle) { Owner = this };
             window.SignedIn += account => result.Text = T("Подключён аккаунт: ", "Connected account: ") + account;
             SteamFlyout.Visibility = Visibility.Collapsed;
-            window.ShowDialog();
-            UpdateSteamStatus();
+            try { window.ShowDialog(); UpdateSteamStatus(); }
+            finally { ResumeHomeVideoAfterSteam(); }
         };
         actions.Children.Add(signIn);
         var signOut = new Button { Content = T("Выйти", "Sign out"), Style = actionStyle, Width = 175, Height = 40 };
@@ -617,6 +750,17 @@ public partial class MainWindow : Window
         panel.Children.Add(actions);
         SteamFlyout.Child = new ScrollViewer { Content = panel, MaxHeight = 540, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         SteamFlyout.Visibility = Visibility.Visible;
+    }
+    private void CloseSteamFlyout(bool resumeVideo = true)
+    {
+        SteamFlyout.Visibility = Visibility.Collapsed;
+        if (resumeVideo) ResumeHomeVideoAfterSteam();
+    }
+    private void ResumeHomeVideoAfterSteam()
+    {
+        if (!homeVideoSuspendedForSteam) return;
+        homeVideoSuspendedForSteam = false;
+        if (refreshPage == ShowHome) ShowHome();
     }
     private void Header_Drag(object sender, System.Windows.Input.MouseButtonEventArgs e) { if (e.ClickCount == 1) DragMove(); }
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

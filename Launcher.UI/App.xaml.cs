@@ -5,6 +5,8 @@ public partial class App : Application
 {
     public App()
     {
+        ButtonSoundService.Register();
+        Exit += (_, _) => ButtonSoundService.Dispose();
         DispatcherUnhandledException += (_, e) => { Log(e.Exception); e.Handled = true; MessageBox.Show(e.Exception.Message, "OpenGDLauncher error"); Shutdown(-1); };
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log(e.ExceptionObject as Exception);
     }
