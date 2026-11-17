@@ -127,7 +127,8 @@ public partial class MainWindow : Window
             themes.ResolveSound(settings.Theme, theme.ButtonClickSound, standard.ButtonClickSound)
                 ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-click.wav"),
             themes.ResolveSound(settings.Theme, theme.LaunchSound, standard.LaunchSound)
-                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "launch.wav"));
+                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "launch.wav"),
+            settings.SoundsEnabled);
         heroSound?.Dispose(); heroSound = null;
         if (theme.HeroSoundEnabled)
         {
@@ -167,7 +168,6 @@ public partial class MainWindow : Window
     {
         if (startupAnimated) return;
         startupAnimated = true;
-        ButtonSoundService.PlayLaunch();
         // Start the entrance slightly to the left, independent of the cursor's position.
         var entrance = new TranslateTransform(-18, 0);
         Shell.RenderTransform = entrance;
@@ -182,6 +182,7 @@ public partial class MainWindow : Window
             EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
         });
     }
+    private void Window_ContentRendered(object sender, EventArgs e) => ButtonSoundService.PlayLaunch();
     private Brush ThemeImage(string? custom, string? fallback, Color baseColor, double opacity = 1)
     {
         var file = themes.ResolveImage(settings.Theme, custom, fallback);
@@ -658,6 +659,15 @@ public partial class MainWindow : Window
         p.Children.Add(Action(T("Установить ZIP", "Install ZIP"), () => { var dialog = new OpenFileDialog { Filter = "Theme ZIP|*.zip" }; if (dialog.ShowDialog() == true) { workshop.Import(dialog.FileName); ShowThemes(); } }));
         var designerKit = Path.Combine(AppContext.BaseDirectory, "ThemeKit");
         if (Directory.Exists(designerKit)) p.Children.Add(Action(T("Шаблоны и инструкция", "Templates and guide"), () => GameService.OpenFolder(designerKit)));
+        p.Children.Add(new TextBlock { Text = T("Звуки", "Sounds"), FontSize = 21, FontWeight = FontWeights.Bold, Margin = new Thickness(5, 18, 5, 8) });
+        var soundsButton = Action(settings.SoundsEnabled ? T("Отключить звуки", "Turn sounds off") : T("Включить звуки", "Turn sounds on"), () =>
+        {
+            settings.SoundsEnabled = !settings.SoundsEnabled;
+            SettingsStore.Save(settings);
+            ButtonSoundService.SetEnabled(settings.SoundsEnabled);
+            ShowSettings();
+        });
+        p.Children.Add(soundsButton);
         p.Children.Add(new TextBlock { Text = T("Бекап Geometry Dash", "Geometry Dash backup"), FontSize = 21, FontWeight = FontWeights.Bold, Margin = new Thickness(5, 18, 5, 8) });
         p.Children.Add(Label(T("Сохранить локальные данные игры без скачанной музыки в выбранную папку.", "Save local game data without downloaded music to a folder you choose.")));
         var backup = new Button { Content = T("Бекап", "Backup"), HorizontalAlignment = HorizontalAlignment.Left, Style = actionStyle };

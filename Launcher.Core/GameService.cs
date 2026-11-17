@@ -13,6 +13,7 @@ public sealed class AppSettings
     public string Theme { get; set; } = "Default";
     public string WorkshopUrl { get; set; } = "";
     public string SelectedVersion { get; set; } = "";
+    public bool SoundsEnabled { get; set; } = true;
 }
 
 public static class SettingsStore

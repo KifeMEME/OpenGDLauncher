@@ -157,22 +157,48 @@ internal static class Program
         window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
         if (args.Length > 1 && args[1] == "sound_ui")
         {
+            var originalSettings = SettingsStore.Load();
             var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             check.Tick += (_, _) =>
             {
                 check.Stop();
-                var service = typeof(MainWindow).Assembly.GetType("Launcher.UI.ButtonSoundService")!;
-                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
-                foreach (var name in new[] { "launch", "hover", "click" })
+                try
                 {
-                    var effect = (System.Media.SoundPlayer?)service.GetField(name, flags)!.GetValue(null);
-                    if (effect?.IsLoadCompleted != true) throw new InvalidOperationException($"WAV failed to load: {name}");
+                    var service = typeof(MainWindow).Assembly.GetType("Launcher.UI.ButtonSoundService")!;
+                    var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+                    foreach (var name in new[] { "launch", "hover", "click" })
+                        if (service.GetField(name, flags)!.GetValue(null) == null) throw new InvalidOperationException($"WAV failed to load: {name}");
+                    var gain = (NAudio.Wave.SampleProviders.VolumeSampleProvider)service.GetField("gain", flags)!.GetValue(null)!;
+                    var output = (NAudio.Wave.WaveOutEvent)service.GetField("output", flags)!.GetValue(null)!;
+                    if (gain.Volume != .5f || output.PlaybackState != NAudio.Wave.PlaybackState.Playing ||
+                        !(bool)service.GetField("launchPlayed", flags)!.GetValue(null)! ||
+                        (long)service.GetField("startupHoverGateUntil", flags)!.GetValue(null)! <= 0)
+                        throw new InvalidOperationException("Startup sound or 50% audio output did not start.");
+                    var button = (System.Windows.Controls.Button)window.FindName("HomeNav");
+                    button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                    var firstHover = (long)service.GetField("hoverBusyUntil", flags)!.GetValue(null)!;
+                    for (var i = 0; i < 30; i++)
+                        button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                    if (firstHover <= 0 || (long)service.GetField("hoverBusyUntil", flags)!.GetValue(null)! != firstHover)
+                        throw new InvalidOperationException("Rapid hovering started overlapping sounds.");
+                    button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    if ((long)service.GetField("clickBusyUntil", flags)!.GetValue(null)! <= 0)
+                        throw new InvalidOperationException("Click sound did not start.");
+                    ((System.Windows.Controls.Button)window.FindName("SettingsNav")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    var page = (System.Windows.Controls.ContentControl)window.FindName("Page");
+                    var panel = (System.Windows.Controls.StackPanel)((System.Windows.Controls.ScrollViewer)((System.Windows.Controls.Border)page.Content).Child).Content;
+                    var english = originalSettings.Language == "en";
+                    var toggleText = originalSettings.SoundsEnabled
+                        ? english ? "Turn sounds off" : "Отключить звуки"
+                        : english ? "Turn sounds on" : "Включить звуки";
+                    var toggle = panel.Children.OfType<System.Windows.Controls.Button>().Single(b => Equals(b.Content, toggleText));
+                    toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    if (SettingsStore.Load().SoundsEnabled == originalSettings.SoundsEnabled ||
+                        (bool)service.GetField("enabled", flags)!.GetValue(null)! == originalSettings.SoundsEnabled)
+                        throw new InvalidOperationException("The sound setting did not save or apply.");
+                    Console.WriteLine("sound=launch played; volume=50%; rapid hover limited; toggle saved");
                 }
-                var button = (System.Windows.Controls.Button)window.FindName("HomeNav");
-                button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
-                button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                Console.WriteLine("sound=three WAV files loaded; hover and click events handled");
-                window.Close();
+                finally { SettingsStore.Save(originalSettings); window.Close(); }
             };
             check.Start(); app.Run(window); return;
         }

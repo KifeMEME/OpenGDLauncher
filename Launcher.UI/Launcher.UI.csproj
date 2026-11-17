@@ -10,6 +10,8 @@
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.10.2" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
+    <PackageReference Include="NAudio.Core" Version="2.4.0" />
+    <PackageReference Include="NAudio.WinMM" Version="2.4.0" />
     <Resource Include="Assets\Fonts\ofont.ru_Lemon.ttf" />
     <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
     <ProjectReference Include="..\Launcher.Themes\Launcher.Themes.csproj" />
@@ -17,7 +19,8 @@
     <Content Include="Assets\awee.wav" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Sounds\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Sounds\*.wav" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\КАК_ЗАПУСТИТЬ_V22.md" Link="КАК_ЗАПУСТИТЬ_V22.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ThirdParty\NAudio-LICENSE" Link="Licenses\NAudio-LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\КАК_ЗАПУСТИТЬ_V23.md" Link="КАК_ЗАПУСТИТЬ_V23.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\playlist.txt" Link="Videos\playlist.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\README.md" Link="Videos\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\*.mp4" Link="Videos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

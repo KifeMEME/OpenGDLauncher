@@ -5,3 +5,7 @@
 В ZIP-сборке DLL этих библиотек остаются отдельными файлами. Их можно заменить совместимыми версиями. Из пакета VideoLAN включены только бинарные компоненты Windows x64.
 
 Сведения об исходных видеороликах и времени нарезки находятся в `Videos/README.md`.
+
+# Звуковой движок
+
+Для смешивания звуков интерфейса используются [NAudio.Core 2.4.0](https://www.nuget.org/packages/NAudio.Core/2.4.0) и [NAudio.WinMM 2.4.0](https://www.nuget.org/packages/NAudio.WinMM/2.4.0). Их лицензия MIT включена в сборку как `Licenses/NAudio-LICENSE`. Исходный код доступен в [репозитории NAudio](https://github.com/naudio/NAudio).
