@@ -5,6 +5,11 @@ namespace Launcher.Workshop;
 
 public sealed class LocalWorkshop
 {
+    private static readonly HashSet<string> AllowedSoundFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "hero.wav", "sounds/launch.wav",
+        "sounds/button-hover.wav", "sounds/button-click.wav"
+    };
     private readonly ThemeService themes;
     public LocalWorkshop(ThemeService themes) => this.themes = themes;
     public void Import(string archivePath)
@@ -25,11 +30,9 @@ public sealed class LocalWorkshop
             {
                 var relative = entry.FullName.Replace('\\', '/');
                 if (relative.EndsWith('/')) continue;
-                var isSound = relative.Equals("hero.wav", StringComparison.OrdinalIgnoreCase)
-                    || relative.Equals("sounds/button-hover.wav", StringComparison.OrdinalIgnoreCase)
-                    || relative.Equals("sounds/button-click.wav", StringComparison.OrdinalIgnoreCase);
+                var isSound = AllowedSoundFiles.Contains(relative);
                 if (relative.StartsWith('/') || relative.Contains("..") || relative.Contains(':') || (!relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) && !relative.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !isSound)) throw new InvalidDataException("Unsafe archive entry.");
-                var limit = relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) ? 64_000 : relative.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ? 5_000_000 : 10_000_000;
+                var limit = relative.Equals("theme.json", StringComparison.OrdinalIgnoreCase) ? 64_000 : isSound ? 5_000_000 : 10_000_000;
                 if (entry.Length > limit) throw new InvalidDataException("File too large.");
                 var output = Path.GetFullPath(Path.Combine(target, relative));
                 if (!output.StartsWith(Path.GetFullPath(target) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Unsafe path.");

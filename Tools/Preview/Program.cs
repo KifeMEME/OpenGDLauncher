@@ -155,6 +155,27 @@ internal static class Program
         window.Show();
         // Screenshots need the final frame; the real launcher keeps its 300 ms startup fade.
         window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+        if (args.Length > 1 && args[1] == "sound_ui")
+        {
+            var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            check.Tick += (_, _) =>
+            {
+                check.Stop();
+                var service = typeof(MainWindow).Assembly.GetType("Launcher.UI.ButtonSoundService")!;
+                var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+                foreach (var name in new[] { "launch", "hover", "click" })
+                {
+                    var effect = (System.Media.SoundPlayer?)service.GetField(name, flags)!.GetValue(null);
+                    if (effect?.IsLoadCompleted != true) throw new InvalidOperationException($"WAV failed to load: {name}");
+                }
+                var button = (System.Windows.Controls.Button)window.FindName("HomeNav");
+                button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                Console.WriteLine("sound=three WAV files loaded; hover and click events handled");
+                window.Close();
+            };
+            check.Start(); app.Run(window); return;
+        }
         if (args.Length > 1 && args[1] == "startup_animation_check")
         {
             var shell = (FrameworkElement)window.FindName("Shell")!;

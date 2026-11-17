@@ -125,7 +125,9 @@ public partial class MainWindow : Window
             themes.ResolveSound(settings.Theme, theme.ButtonHoverSound, standard.ButtonHoverSound)
                 ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-hover.wav"),
             themes.ResolveSound(settings.Theme, theme.ButtonClickSound, standard.ButtonClickSound)
-                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-click.wav"));
+                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "button-click.wav"),
+            themes.ResolveSound(settings.Theme, theme.LaunchSound, standard.LaunchSound)
+                ?? Path.Combine(AppContext.BaseDirectory, "Sounds", "launch.wav"));
         heroSound?.Dispose(); heroSound = null;
         if (theme.HeroSoundEnabled)
         {
@@ -165,6 +167,7 @@ public partial class MainWindow : Window
     {
         if (startupAnimated) return;
         startupAnimated = true;
+        ButtonSoundService.PlayLaunch();
         // Start the entrance slightly to the left, independent of the cursor's position.
         var entrance = new TranslateTransform(-18, 0);
         Shell.RenderTransform = entrance;

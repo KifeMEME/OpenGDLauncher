@@ -37,6 +37,7 @@ public sealed class ThemeManifest
     public bool HeroSoundEnabled { get; set; } = true;
     public string? ButtonHoverSound { get; set; }
     public string? ButtonClickSound { get; set; }
+    public string? LaunchSound { get; set; }
     public string? RibbonImage { get; set; }
     public string? SteamCardImage { get; set; }
     public string? ContentCardImage { get; set; }
@@ -83,6 +84,7 @@ public sealed class ThemeService
         if (manifest.HeroSound != null) ValidateSound(path, manifest.HeroSound);
         if (manifest.ButtonHoverSound != null) ValidateSound(path, manifest.ButtonHoverSound);
         if (manifest.ButtonClickSound != null) ValidateSound(path, manifest.ButtonClickSound);
+        if (manifest.LaunchSound != null) ValidateSound(path, manifest.LaunchSound);
         return manifest;
     }
     public string? ImagePath(string name, string? relative)

@@ -16,6 +16,8 @@
     <ProjectReference Include="..\Launcher.Workshop\Launcher.Workshop.csproj" />
     <Content Include="Assets\awee.wav" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Sounds\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Sounds\*.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\КАК_ЗАПУСТИТЬ_V22.md" Link="КАК_ЗАПУСТИТЬ_V22.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\playlist.txt" Link="Videos\playlist.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\README.md" Link="Videos\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\*.mp4" Link="Videos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
