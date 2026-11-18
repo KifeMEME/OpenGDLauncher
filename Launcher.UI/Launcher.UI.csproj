@@ -20,7 +20,7 @@
     <Content Include="Sounds\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Sounds\*.wav" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ThirdParty\NAudio-LICENSE" Link="Licenses\NAudio-LICENSE" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\КАК_ЗАПУСТИТЬ_V23.md" Link="КАК_ЗАПУСТИТЬ_V23.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\КАК_ЗАПУСТИТЬ_V24.md" Link="КАК_ЗАПУСТИТЬ_V24.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\playlist.txt" Link="Videos\playlist.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\README.md" Link="Videos\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Videos\*.mp4" Link="Videos\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

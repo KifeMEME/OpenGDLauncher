@@ -172,18 +172,25 @@ internal static class Program
                     var output = (NAudio.Wave.WaveOutEvent)service.GetField("output", flags)!.GetValue(null)!;
                     if (gain.Volume != .5f || output.PlaybackState != NAudio.Wave.PlaybackState.Playing ||
                         !(bool)service.GetField("launchPlayed", flags)!.GetValue(null)! ||
-                        (long)service.GetField("startupHoverGateUntil", flags)!.GetValue(null)! <= 0)
+                        !(bool)service.GetField("launchQueued", flags)!.GetValue(null)!)
                         throw new InvalidOperationException("Startup sound or 50% audio output did not start.");
+                    var navNames = new[] { "HomeNav", "GameNav", "GeodeNav", "ThemesNav", "SettingsNav", "AboutNav" };
+                    var hoverCount = (int)service.GetField("hoverPlayCount", flags)!.GetValue(null)!;
+                    foreach (var name in navNames)
+                        ((System.Windows.Controls.Button)window.FindName(name)).RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
+                    if ((int)service.GetField("hoverPlayCount", flags)!.GetValue(null)! != hoverCount + navNames.Length)
+                        throw new InvalidOperationException("Different buttons did not start overlapping hover sounds.");
                     var button = (System.Windows.Controls.Button)window.FindName("HomeNav");
-                    button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
-                    var firstHover = (long)service.GetField("hoverBusyUntil", flags)!.GetValue(null)!;
+                    var rapid = System.Diagnostics.Stopwatch.StartNew();
                     for (var i = 0; i < 30; i++)
                         button.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = UIElement.MouseEnterEvent });
-                    if (firstHover <= 0 || (long)service.GetField("hoverBusyUntil", flags)!.GetValue(null)! != firstHover)
-                        throw new InvalidOperationException("Rapid hovering started overlapping sounds.");
+                    rapid.Stop();
+                    if ((int)service.GetField("hoverPlayCount", flags)!.GetValue(null)! != hoverCount + navNames.Length || rapid.ElapsedMilliseconds > 500)
+                        throw new InvalidOperationException("Repeated hover on one button caused excessive playback or delay.");
                     button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                    if ((long)service.GetField("clickBusyUntil", flags)!.GetValue(null)! <= 0)
-                        throw new InvalidOperationException("Click sound did not start.");
+                    ((System.Windows.Controls.Button)window.FindName("GameNav")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    if ((int)service.GetField("clickPlayCount", flags)!.GetValue(null)! < 2)
+                        throw new InvalidOperationException("Rapid click sounds did not overlap.");
                     ((System.Windows.Controls.Button)window.FindName("SettingsNav")).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                     var page = (System.Windows.Controls.ContentControl)window.FindName("Page");
                     var panel = (System.Windows.Controls.StackPanel)((System.Windows.Controls.ScrollViewer)((System.Windows.Controls.Border)page.Content).Child).Content;
@@ -196,7 +203,7 @@ internal static class Program
                     if (SettingsStore.Load().SoundsEnabled == originalSettings.SoundsEnabled ||
                         (bool)service.GetField("enabled", flags)!.GetValue(null)! == originalSettings.SoundsEnabled)
                         throw new InvalidOperationException("The sound setting did not save or apply.");
-                    Console.WriteLine("sound=launch played; volume=50%; rapid hover limited; toggle saved");
+                    Console.WriteLine("sound=launch played; volume=50%; six hover sounds overlap without lag; toggle saved");
                 }
                 finally { SettingsStore.Save(originalSettings); window.Close(); }
             };

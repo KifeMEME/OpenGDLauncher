@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -22,16 +23,19 @@ internal static class ButtonSoundService
     private static bool registered;
     private static bool enabled = true;
     private static bool launchPlayed;
-    private static long hoverBusyUntil;
-    private static long clickBusyUntil;
-    private static long startupHoverGateUntil;
+    private static bool launchQueued;
+    private static ConditionalWeakTable<Button, HoverState> hoverStates = new();
+    private static readonly Queue<long> hoverEnds = new();
+    private static int hoverPlayCount;
+    private static int clickPlayCount;
+    private const int MaxHoverVoices = 6;
 
     public static void Register()
     {
         if (registered) return;
         registered = true;
         EventManager.RegisterClassHandler(typeof(Button), UIElement.MouseEnterEvent,
-            new MouseEventHandler((sender, _) => { if (sender is Button { IsEnabled: true }) PlayHover(); }));
+            new MouseEventHandler((sender, _) => { if (sender is Button { IsEnabled: true } button) PlayHover(button); }));
         EventManager.RegisterClassHandler(typeof(Button), ButtonBase.ClickEvent,
             new RoutedEventHandler((sender, _) => { if (sender is Button { IsEnabled: true }) PlayClick(); }));
     }
@@ -42,7 +46,9 @@ internal static class ButtonSoundService
         click = AudioClip.TryLoad(clickPath);
         launch = AudioClip.TryLoad(launchPath);
         mixer?.RemoveAllMixerInputs();
-        hoverBusyUntil = clickBusyUntil = 0;
+        hoverStates = new ConditionalWeakTable<Button, HoverState>();
+        hoverEnds.Clear();
+        hoverPlayCount = clickPlayCount = 0;
         if (hover != null || click != null || launch != null) EnsureOutput();
         SetEnabled(soundsEnabled);
     }
@@ -51,31 +57,34 @@ internal static class ButtonSoundService
     {
         enabled = value;
         if (gain != null) gain.Volume = value ? 0.5f : 0f;
-        if (!value) mixer?.RemoveAllMixerInputs();
+        if (!value) { mixer?.RemoveAllMixerInputs(); hoverEnds.Clear(); }
     }
 
     public static void PlayLaunch()
     {
         if (launchPlayed) return;
         launchPlayed = true;
-        if (!enabled || launch == null || !Play(launch)) return;
-        startupHoverGateUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 2;
+        if (enabled && launch != null) launchQueued = Play(launch);
     }
 
-    private static void PlayHover()
+    private static void PlayHover(Button button)
     {
         if (!enabled || hover == null) return;
         var now = Stopwatch.GetTimestamp();
-        if (now < startupHoverGateUntil || now < hoverBusyUntil) return;
-        if (Play(hover)) hoverBusyUntil = now + (long)(hover.Duration.TotalSeconds * Stopwatch.Frequency);
+        var state = hoverStates.GetValue(button, _ => new HoverState());
+        if (now - state.LastPlayed < Stopwatch.Frequency / 10) return;
+        while (hoverEnds.Count > 0 && hoverEnds.Peek() <= now) hoverEnds.Dequeue();
+        if (hoverEnds.Count >= MaxHoverVoices) return;
+        if (!Play(hover)) return;
+        state.LastPlayed = now;
+        hoverEnds.Enqueue(now + (long)(hover.Duration.TotalSeconds * Stopwatch.Frequency));
+        hoverPlayCount++;
     }
 
     private static void PlayClick()
     {
         if (!enabled || click == null) return;
-        var now = Stopwatch.GetTimestamp();
-        if (now < clickBusyUntil) return;
-        if (Play(click)) clickBusyUntil = now + (long)(click.Duration.TotalSeconds * Stopwatch.Frequency);
+        if (Play(click)) clickPlayCount++;
     }
 
     private static bool Play(AudioClip clip)
@@ -158,5 +167,10 @@ internal static class ButtonSoundService
             position += available;
             return available;
         }
+    }
+
+    private sealed class HoverState
+    {
+        public long LastPlayed;
     }
 }
