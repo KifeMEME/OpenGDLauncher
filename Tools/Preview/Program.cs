@@ -424,7 +424,7 @@ internal static class Program
             };
             check.Start(); app.Run(window); return;
         }
-        if (args.Length > 1 && args[1] == "steam_qr_window_ui")
+        if (args.Length > 1 && args[1] is "steam_qr_window_ui" or "steam_qr_fallback_ui")
         {
             var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
             var style = (System.Windows.Style)typeof(MainWindow).GetField("actionStyle", flags)!.GetValue(window)!;
@@ -433,6 +433,20 @@ internal static class Program
             var qrWindow = new SteamQrWindow("preview", true, window.FontFamily, background, window.Foreground, accent, style, startOnLoad: false)
             { Owner = window, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2000, Top = -2000 };
             qrWindow.Show();
+            var website = (System.Windows.Controls.Button)typeof(SteamQrWindow).GetField("websiteButton", flags)!.GetValue(qrWindow)!;
+            if (website.Visibility != Visibility.Collapsed) throw new InvalidOperationException("Website fallback should be hidden before QR failure.");
+            if (args[1] == "steam_qr_fallback_ui")
+            {
+                var timer = (System.Windows.Threading.DispatcherTimer)typeof(SteamQrWindow).GetField("qrWaitTimer", flags)!.GetValue(qrWindow)!;
+                timer.Interval = TimeSpan.FromMilliseconds(5);
+                timer.Start();
+                var frame = new System.Windows.Threading.DispatcherFrame();
+                var end = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+                end.Tick += (_, _) => { end.Stop(); frame.Continue = false; };
+                end.Start();
+                System.Windows.Threading.Dispatcher.PushFrame(frame);
+                if (website.Visibility != Visibility.Visible) throw new InvalidOperationException("Website fallback did not appear after QR failure.");
+            }
             qrWindow.UpdateLayout();
             var qrPreview = new RenderTargetBitmap(520, 625, 96, 96, PixelFormats.Pbgra32);
             qrPreview.Render(qrWindow);

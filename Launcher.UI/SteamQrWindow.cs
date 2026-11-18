@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace Launcher.UI;
 
@@ -16,6 +17,8 @@ public sealed class SteamQrWindow : Window
     private readonly Image codeImage;
     private readonly Button retryButton;
     private readonly Button closeButton;
+    private readonly Button websiteButton;
+    private readonly DispatcherTimer qrWaitTimer;
     private CancellationTokenSource? cancellation;
     private Task? attempt;
     private bool signedIn;
@@ -76,17 +79,37 @@ public sealed class SteamQrWindow : Window
         layout.Children.Add(codeFrame);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
-        retryButton = new Button { Content = T("Повторить", "Retry"), Style = buttonStyle, Width = 175, Height = 42 };
+        websiteButton = new Button { Content = T("Перейти на сайт", "Open Steam site"), Style = buttonStyle, Width = 150, Height = 34, FontSize = 11, Visibility = Visibility.Collapsed };
+        websiteButton.Click += (_, _) =>
+        {
+            try { GameService.OpenUrl("https://store.steampowered.com/login/"); }
+            catch (Exception error) { status.Text = T("Не удалось открыть сайт Steam: ", "Could not open the Steam site: ") + error.Message; }
+        };
+        retryButton = new Button { Content = T("Повторить", "Retry"), Style = buttonStyle, Width = 160, Height = 42 };
         retryButton.Click += async (_, _) => await RestartAsync();
-        closeButton = new Button { Content = T("Отмена", "Cancel"), Style = buttonStyle, Width = 175, Height = 42 };
+        closeButton = new Button { Content = T("Отмена", "Cancel"), Style = buttonStyle, Width = 160, Height = 42 };
         closeButton.Click += (_, _) => Close();
+        buttons.Children.Add(websiteButton);
         buttons.Children.Add(retryButton);
         buttons.Children.Add(closeButton);
         Grid.SetRow(buttons, 3);
         layout.Children.Add(buttons);
 
+        qrWaitTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        qrWaitTimer.Tick += (_, _) =>
+        {
+            qrWaitTimer.Stop();
+            if (codeImage.Source == null && !signedIn && IsVisible)
+                ShowWebsiteFallback(T("QR-код не появился. Попробуйте ещё раз или откройте сайт Steam.", "No QR code appeared. Retry or open the Steam site."));
+        };
         if (startOnLoad) Loaded += (_, _) => attempt = SignInAsync();
-        Closed += (_, _) => cancellation?.Cancel();
+        Closed += (_, _) => { qrWaitTimer.Stop(); cancellation?.Cancel(); };
+    }
+
+    private void ShowWebsiteFallback(string message)
+    {
+        status.Text = message + " " + T("Вход на сайте не подключает лаунчер: затем повторите вход по QR.", "Website sign-in does not connect the launcher; retry QR afterward.");
+        websiteButton.Visibility = Visibility.Visible;
     }
 
     private async Task RestartAsync()
@@ -104,7 +127,10 @@ public sealed class SteamQrWindow : Window
         codeImage.Source = null;
         codeImage.Visibility = Visibility.Collapsed;
         placeholder.Visibility = Visibility.Visible;
+        placeholder.Text = T("Ожидаем QR-код...", "Waiting for QR code...");
         status.Text = T("Подключаемся к Steam...", "Connecting to Steam...");
+        websiteButton.Visibility = Visibility.Collapsed;
+        qrWaitTimer.Start();
         retryButton.IsEnabled = true;
         try
         {
@@ -114,7 +140,14 @@ public sealed class SteamQrWindow : Window
                 if (item.QrText is { } qrText)
                 {
                     var bitmap = SteamQrBitmap.TryCreate(qrText);
-                    if (bitmap == null) return;
+                    if (bitmap == null)
+                    {
+                        qrWaitTimer.Stop();
+                        ShowWebsiteFallback(T("Не удалось отобразить QR-код.", "Could not render the QR code."));
+                        return;
+                    }
+                    qrWaitTimer.Stop();
+                    websiteButton.Visibility = Visibility.Collapsed;
                     codeImage.Source = bitmap;
                     codeImage.Visibility = Visibility.Visible;
                     placeholder.Visibility = Visibility.Collapsed;
@@ -125,9 +158,10 @@ public sealed class SteamQrWindow : Window
                     codeImage.Source = null;
                     codeImage.Visibility = Visibility.Collapsed;
                     placeholder.Visibility = Visibility.Visible;
-                    status.Text = T("Обновляем QR-код...", "Refreshing QR code...");
+                    if (websiteButton.Visibility != Visibility.Visible)
+                        status.Text = T("Обновляем QR-код...", "Refreshing QR code...");
                 }
-                else if (codeImage.Source == null)
+                else if (codeImage.Source == null && websiteButton.Visibility != Visibility.Visible)
                 {
                     status.Text = T("Подключаемся к Steam. Если код не появится, нажмите «Повторить».", "Connecting to Steam. If no code appears, click Retry.");
                 }
@@ -135,6 +169,8 @@ public sealed class SteamQrWindow : Window
             var account = await new DepotDownloaderService().SignInAsync(username, progress, current.Token);
             if (!IsVisible) return;
             signedIn = true;
+            qrWaitTimer.Stop();
+            websiteButton.Visibility = Visibility.Collapsed;
             codeImage.Source = null;
             codeImage.Visibility = Visibility.Collapsed;
             placeholder.Text = "✓";
@@ -146,14 +182,15 @@ public sealed class SteamQrWindow : Window
         }
         catch (OperationCanceledException)
         {
-            if (IsVisible) status.Text = T("Запрос отменён.", "Request cancelled.");
+            if (IsVisible && codeImage.Source == null) ShowWebsiteFallback(T("Запрос отменён.", "Request cancelled."));
         }
         catch (Exception error)
         {
-            if (IsVisible) status.Text = T("Не удалось войти: ", "Sign-in failed: ") + error.Message;
+            if (IsVisible) ShowWebsiteFallback(T("Не удалось войти: ", "Sign-in failed: ") + error.Message);
         }
         finally
         {
+            qrWaitTimer.Stop();
             current.Cancel();
             if (ReferenceEquals(cancellation, current)) cancellation = null;
             if (IsVisible && !signedIn) retryButton.IsEnabled = true;
